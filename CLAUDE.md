@@ -270,10 +270,10 @@ From BRD Section 26A. The platform must support all 3 funding models × 5 asset-
 │   ├── /validators/                 — Request validators
 │   └── /config/                     — Fabric, Polygon, DB, env config
 │
-├── /portals/                        — Next.js + TypeScript UIs (3 total)
-│   ├── /buyer-supplier/             — Shared buyer-supplier workspace
-│   ├── /lender/                     — Lender portal
-│   └── /admin-auditor/              — Admin + auditor UI
+├── /portals/                        — Next.js + TypeScript UIs (3 total)   // Out of scope for solo build
+│   ├── /buyer-supplier/             — Shared buyer-supplier workspace      // Out of scope for solo build
+│   ├── /lender/                     — Lender portal                        // Out of scope for solo build
+│   └── /admin-auditor/              — Admin + auditor UI                   // Out of scope for solo build
 │
 └── /scripts/                        — Deployment & setup scripts
 ```

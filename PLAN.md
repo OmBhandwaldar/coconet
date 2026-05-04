@@ -211,10 +211,10 @@
 │       ├── db.config.ts
 │       └── env.config.ts
 │
-├── /portals/
-│   ├── /buyer-supplier/
-│   ├── /lender/
-│   └── /admin-auditor/
+├── /portals/                        // Out of scope for solo build
+│   ├── /buyer-supplier/             // Out of scope for solo build
+│   ├── /lender/                     // Out of scope for solo build
+│   └── /admin-auditor/              // Out of scope for solo build
 │
 └── /scripts/
 ```
@@ -872,10 +872,10 @@ POST   /api/adapters/banking/callback
 POST   /api/adapters/dms/webhook
 ```
 
-### 7B. UI Portals (Week 38–44)
-**(Next.js / TypeScript)**
+### 7B. UI Portals (Week 38–44)   <!-- Out of scope for solo build -->
+**(Next.js / TypeScript)**   <!-- Out of scope for solo build -->
 
-**Portal 1: Buyer-Supplier Shared Workspace**
+**Portal 1: Buyer-Supplier Shared Workspace**   <!-- Out of scope for solo build -->
 - PO creation, acknowledgement, amendment
 - GRN submission + delivery acceptance
 - Invoice submission + approval
@@ -885,7 +885,7 @@ POST   /api/adapters/dms/webhook
 - Maker-checker approval queue
 - Notification centre
 
-**Portal 2: Lender Portal**
+**Portal 2: Lender Portal**   <!-- Out of scope for solo build -->
 - Finance opportunity feed (all 7 products)
 - Underwriting dashboard
 - Quote + approval management with maker-checker
@@ -893,14 +893,14 @@ POST   /api/adapters/dms/webhook
 - Portfolio exposure view (FR-REP-03)
 - Repayment + overdue monitoring
 
-**Portal 3: Admin / Auditor UI**
+**Portal 3: Admin / Auditor UI**   <!-- Out of scope for solo build -->
 - Organization onboarding management
 - Program configuration
 - Audit evidence pack download (FR-REP-02)
 - Regulator observer view — read-only (FR-REP-04)
 - Fabric + Polygon network status
 
-**Deliverable:** All integrations live, all 3 portals functional end-to-end.
+**Deliverable:** All integrations live. <!-- Portals out of scope for solo build; demos via Postman + Swagger UI + block explorers. -->
 
 ---
 
