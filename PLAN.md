@@ -184,13 +184,13 @@
 │   │   ├── escrow-vault.polygon.ts
 │   │   ├── condition-evaluator.polygon.ts
 │   │   └── funding-manager.polygon.ts
-│   ├── /adapters/
-│   │   ├── erp.adapter.ts
-│   │   ├── wms.adapter.ts
-│   │   ├── tms.adapter.ts
-│   │   ├── banking.adapter.ts
-│   │   ├── dms.adapter.ts
-│   │   └── notification.adapter.ts
+│   ├── /adapters/                       // Mocked where no external system exists (solo build)
+│   │   ├── erp.adapter.ts                // Mocked
+│   │   ├── wms.adapter.ts                // Mocked
+│   │   ├── tms.adapter.ts                // Mocked
+│   │   ├── banking.adapter.ts            // Mocked
+│   │   ├── dms.adapter.ts                // Mocked
+│   │   └── notification.adapter.ts       // Mocked
 │   ├── /models/
 │   │   ├── organization.model.ts
 │   │   ├── purchase-order.model.ts
@@ -831,6 +831,7 @@ GET    /api/reports/observer/:entityId
 **Goal: All 6 integration adapters + all 3 portals complete**
 
 ### 7A. Integration Adapters (Week 37–42)
+<!-- Solo build note: All 6 adapters implemented as mocks where there's no real external system to talk to. Interface + contract + idempotency stay BRD-compliant; backing implementation is a stub returning realistic responses. -->
 
 All adapters implement per BRD Section 28:
 - Idempotent processing (idempotency key per request)

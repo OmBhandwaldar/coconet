@@ -265,7 +265,7 @@ From BRD Section 26A. The platform must support all 3 funding models × 5 asset-
 │   ├── /middleware/                 — auth, rbac, validate, error, logger
 │   ├── /fabric/                     — Fabric gateway + 6 chaincode clients
 │   ├── /polygon/                    — ethers.js provider + 4 contract clients
-│   ├── /adapters/                   — ERP, WMS, TMS, banking, DMS, notifications
+│   ├── /adapters/                   — ERP, WMS, TMS, banking, DMS, notifications   // Mocked where no external system exists (solo build)
 │   ├── /models/                     — 8 data models
 │   ├── /validators/                 — Request validators
 │   └── /config/                     — Fabric, Polygon, DB, env config
