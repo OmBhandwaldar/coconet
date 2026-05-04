@@ -406,7 +406,7 @@
 - Test channel communication
 
 ### 1B. Polygon Supernet Setup (Week 2–4)
-- Initialize Polygon Edge / CDK chain
+- Initialize Polygon CDK chain
 - Permissioned validator set: Buyer org, Lender org, Platform org
 - IBFT 2.0 consensus
 - JSON-RPC endpoint
