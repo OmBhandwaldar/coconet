@@ -1,0 +1,43 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \".claude/hooks/session-start.js\""
+          }
+        ],
+        "description": "Inject latest session notes so Claude has prior context immediately"
+      }
+    ],
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \".claude/hooks/session-end.js\"",
+            "async": true,
+            "timeout": 10
+          }
+        ],
+        "description": "Generate session narrative via Claude API, write to YYYY-MM-DD-<sessionId>-session.tmp with idempotent ECC markers"
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \".claude/hooks/session-end-marker.js\"",
+            "async": true
+          }
+        ],
+        "description": "No-op lifecycle marker — real persistence is in Stop which carries transcript_path"
+      }
+    ]
+  }
+}
