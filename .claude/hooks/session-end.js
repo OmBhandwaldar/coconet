@@ -29,6 +29,10 @@ let raw = "";
 process.stdin.setEncoding("utf8");
 for await (const chunk of process.stdin) raw += chunk;
 
+// Debug: capture raw payload so we can inspect what Claude Code actually sends
+fs.mkdirSync(path.resolve(__dirname, "../sessions"), { recursive: true });
+fs.writeFileSync(path.resolve(__dirname, "../sessions/debug-payload.txt"), raw, "utf8");
+
 let payload;
 try {
   payload = JSON.parse(raw);
@@ -106,17 +110,13 @@ const recentCommits = git("log --oneline -6");
 const projectName = path.basename(REPO);
 
 // ── Session ID → filename ─────────────────────────────────────────────────────
-const sessionId = process.env.CLAUDE_SESSION_ID ?? "";
-const sessionSuffix = sessionId
-  ? sessionId.slice(-8)
-  : Date.now().toString(36).slice(-8);
 const date = new Date().toISOString().slice(0, 10);
 const time = new Date().toLocaleTimeString("en-US", {
   hour: "2-digit",
   minute: "2-digit",
   hour12: false,
 });
-const filename = `${date}-${sessionSuffix}-session.tmp`;
+const filename = `${date}-session.tmp`;
 const finalPath = path.join(SESSIONS_DIR, filename);
 
 // ── Generate summary block via Claude API ─────────────────────────────────────
