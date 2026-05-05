@@ -86,7 +86,7 @@ The riskiest seams in this project are **cross-chain communication** — Fabric 
 | Docker Compose with Fabric test-network (2 orgs to start) | `fabric-samples/test-network` |
 | Hardhat node running locally | Hardhat |
 | Express.js scaffold with middleware stack | Express + TypeScript |
-| MongoDB + PostgreSQL + MinIO containers | Docker Compose |
+| MongoDB + MinIO containers (PostgreSQL deferred to reporting ring) | Docker Compose |
 | `GET /health` endpoint working | Express |
 | Fabric Gateway connection from API verified | `fabric-gateway` |
 | Polygon provider connection from API verified | `ethers.js v6` |
