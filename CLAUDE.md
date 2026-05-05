@@ -417,23 +417,77 @@ Key math in that example (for anyone implementing):
 
 ## 19. Testing Requirements
 
-### Chaincode
-- Unit tests per contract function using `chai` + `sinon`
-- State transition tests covering legal AND illegal transitions (illegal must be rejected)
-- PDC visibility tests — non-participants cannot see PDC data
+### Strategy: 4 layers, each at a different cadence
 
-### Solidity
-- Unit tests using `hardhat` + `chai`
-- Coverage ≥ 90% for all 4 contracts
-- Fuzz tests for funding/release edge cases
+| Layer | Scope | When written | When run |
+|---|---|---|---|
+| **Unit** | One chaincode function / one Solidity function / one API service method | Same commit as the code | Watch mode (every save) |
+| **Component** | One chaincode on local Fabric / one contract on Hardhat | When function/method complete | Before commit |
+| **Integration** | API + Fabric + Polygon together for a Block's slice | End of each Block | Before commit + end of day |
+| **End-to-end (E2E)** | Full 14-step Tata/Bharat/HDFC flow | Built once at end of Block 6, extended per Ring | Before merging any change post-MVP |
 
-### API
-- Unit tests with `jest` for services
-- Integration tests using a test Fabric network + local Polygon devnet
-- End-to-end tests following the 14-step flow above
+You don't pick one — you build all four, layered. From MVP-PLAN.md: "Postman first" — define each step's request before writing chaincode.
+
+### Tools per layer
+
+| Layer | Runner | Notes |
+|---|---|---|
+| Chaincode unit + component | **Mocha + chai + sinon** | Per Hyperledger convention |
+| Solidity unit + component | **Hardhat + chai** (Mocha-under-the-hood) | + `solidity-coverage` for ≥ 90% target |
+| API unit + integration + E2E | **Vitest** | Native ESM (`ethers.js v6` is ESM-only — saves Jest config gymnastics) |
+| E2E manual / demo | **Postman + Newman** | Master collection covers all 14 steps |
+| Type-check / lint | `tsc --noEmit` + ESLint + prettier | On save |
+
+Two test runners total: Mocha (chaincode + Solidity) and Vitest (API). Vitest's API is Jest-compatible — `describe`, `it`, `expect`, mocks all work the same.
+
+### Cadence
+
+**Per function** — write the function and its unit test in the same commit. Don't accept "I'll add tests later" — solo means no one else catches the gap.
+
+**Per endpoint** — add a Postman request to the master collection. Postman doubles as spec and manual smoke test.
+
+**Per Block** — block-specific integration test must be green. Previous Blocks' integration tests must remain green.
+
+**Per Ring (post-MVP)** — full 14-step E2E test stays green. Add new tests for new ring behavior.
+
+**Continuous** — unit tests in watch mode, type-check on save, lint on save.
+
+### Coverage targets (solo realistic)
+
+| Layer | Target | Rationale |
+|---|---|---|
+| Solidity | **≥ 90%** | BRD requires it; contracts are small, achievable |
+| Chaincode | **60–70% on critical paths** | State transitions, business rules, access control. Skip 100% — diminishing returns |
+| API services | **50–60% (happy + RBAC + validation)** | Most failure modes surface in integration tests, don't double-test |
+| Integration | **Block-level coverage of every Block** | This is the regression net — non-negotiable |
+| Postman | **All 14 steps after Block 6** | Demo + manual smoke test |
+
+Don't chase 100%. Chase: "if I broke something important, the test would catch it."
+
+### Special cases that need explicit tests
+
+| Concern | What the test must verify |
+|---|---|
+| **PDC visibility (NFR-06)** | Spin up 3 peers, write to PDC, assert non-party `getPrivateData` returns empty / errors |
+| **Bridge service correctness** | Mock Fabric event → verify Polygon condition flips → verify Polygon event triggers Fabric audit write |
+| **Maker-checker enforcement (Rule-06)** | Two simulated MSP identities, maker submits + checker approves; assert "checker == maker" rejected |
+| **State machine illegality** | For each entity, enumerate every illegal transition pair and assert each throws |
+| **Rule-02 duplicate financing** | Lock asset → second lock attempt fails. Across two simulated lenders. |
+| **Sanctions screening** | Mock sanctions API, verify it's called at all 5 mandatory checkpoints, no checkpoint silently skipped |
+
+### Daily / weekly rhythm
+
+**Daily:** code + unit test in one commit · `npm test -- --watch` always running · add Postman requests as endpoints land.
+
+**End of day:** integration test for in-progress Block green · push to git only if green.
+
+**End of Block:** Block-specific integration test green · all previous Blocks' integration tests still green · Postman covers all new endpoints · update MVP-PLAN.md status checkbox.
+
+**End of Ring (post-MVP):** full 14-step E2E test green · new ring's tests green · sanity-check via Postman manual run.
 
 ### Load / Performance
-- Trade-event confirmation ≤ 5 seconds under expected load (NFR-03) — must be verified in Phase 8
+
+- Trade-event confirmation ≤ 5 seconds under expected load (NFR-03) — must be verified in Phase 8 (out of scope for solo MVP).
 
 ---
 

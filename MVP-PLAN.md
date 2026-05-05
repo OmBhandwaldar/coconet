@@ -91,6 +91,11 @@ The riskiest seams in this project are **cross-chain communication** — Fabric 
 | Fabric Gateway connection from API verified | `fabric-gateway` |
 | Polygon provider connection from API verified | `ethers.js v6` |
 | Logger + correlation ID middleware | Custom |
+| Vitest configured for API tests + first dummy test passing | Vitest |
+| Mocha + chai + sinon scaffolded for chaincode tests | Mocha + chai + sinon |
+| Hardhat test scaffold with one passing dummy contract test | Hardhat + chai |
+| Empty Postman collection committed at `/postman/scm.postman_collection.json` | Postman |
+| Placeholder integration test asserting `GET /health` returns 200 | Vitest + supertest |
 
 **BRD mapping:** Phase 1A, 1B, 1C from PLAN.md (scoped down)
 
