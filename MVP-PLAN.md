@@ -110,7 +110,7 @@ The riskiest seams in this project are **cross-chain communication** — Fabric 
 |---|---|
 | `onboarding-cc` chaincode: `createOrganization`, `updateOrganizationStatus`, `assignRole` | Fabric + TypeScript |
 | `/api/onboarding/organizations` routes (POST, GET, PUT status) | Express |
-| Fabric CA enrollment for each org | Fabric CA |
+| ~~Fabric CA enrollment for each org~~ — **Deferred to Ring 11** (cryptogen admin identities used instead; chaincode currently sees org-level MSP only, not per-user) | Fabric CA |
 | Tata, Bharat, HDFC, Platform, Auditor registered + approved | API calls |
 | Maker-checker threshold setup (basic) | `setMakerCheckerThreshold` |
 
@@ -178,7 +178,7 @@ The riskiest seams in this project are **cross-chain communication** — Fabric 
 | Deliverable | Tech |
 |---|---|
 | Master Postman collection: all 14 steps as named requests, run-in-order | Postman |
-| `jest` integration test that spins up Fabric + Polygon and runs the full flow | Jest + supertest |
+| `vitest` integration test that spins up Fabric + Polygon and runs the full flow | Vitest + supertest |
 | README with one-command setup (`docker compose up && npm run demo`) | Markdown + scripts |
 | Block explorer setup (Hyperledger Explorer + Blockscout) | Compose |
 | Demo script for sir | Markdown |
@@ -263,11 +263,13 @@ Each ring is independently shippable. After every ring, the integration test mus
 - BRD mapping: cross-cutting (Section 15 of CLAUDE.md)
 - **Why tenth:** Cross-cutting — easier once chaincodes are stable.
 
-### Ring 11 — Maker-checker engine (Rule-06) across all chaincodes (1–2 weeks)
-- Configurable thresholds per org + transaction type
-- Two-signature enforcement on chaincode
-- BRD mapping: BR-09, Rule-06
-- **Why eleventh:** Repetitive but mechanical. Better with stable chaincodes.
+### Ring 11 — Maker-checker engine (Rule-06) across all chaincodes (2–3 weeks)
+- **Fabric CA setup + per-user enrollment** (deferred from Block 2) — 5 CA containers in docker-compose, user wallet storage, enrollment endpoints. Required prerequisite — without distinct per-user identities, two-signature enforcement is impossible at the chaincode layer. ~2–3 days on its own.
+- Configurable thresholds per org + transaction type (storage already done in Block 2)
+- Two-signature enforcement on chaincode — read `ctx.clientIdentity.getID()`, reject if maker.id == checker.id
+- Update every chaincode state transition to record `submitted_by` (user id + MSP) — satisfies NFR-05 cryptographically (currently satisfied at API/JWT layer only)
+- BRD mapping: BR-09, Rule-06, NFR-05
+- **Why eleventh:** Repetitive but mechanical *once the CA prerequisite is in place*. Better with stable chaincodes.
 
 ### Ring 12 — Adapters + OpenAPI + Postman polish (2 weeks)
 - 6 mocked adapters with idempotency
@@ -299,8 +301,8 @@ Each ring is independently shippable. After every ring, the integration test mus
 | Ring 8 — Asset types | 2–3 weeks | 34 weeks |
 | Ring 9 — Finance products | 3–4 weeks | 38 weeks |
 | Ring 10 — Sanctions | 1 week | 39 weeks |
-| Ring 11 — Maker-checker | 1–2 weeks | 41 weeks |
-| Ring 12 — Adapters + polish | 2 weeks | **43 weeks (Full BRD backend)** |
+| Ring 11 — Maker-checker (incl. Fabric CA) | 2–3 weeks | 42 weeks |
+| Ring 12 — Adapters + polish | 2 weeks | **44 weeks (Full BRD backend)** |
 
 **MVP at ~4 months. Full BRD backend at ~10–11 months solo, full-time.** (Full PLAN.md spec was 12 months for 11 people; solo trades parallel-team breadth for sequential single-track depth.)
 
@@ -309,7 +311,7 @@ Each ring is independently shippable. After every ring, the integration test mus
 ## 6. Working Style Rules
 
 1. **Postman first.** Define each step's request before writing the chaincode. Postman = spec + test.
-2. **Integration test from Block 6 onward.** A `jest` test runs the full 14-step flow. Must stay green after every ring.
+2. **Integration test from Block 6 onward.** A `vitest` test runs the full 14-step flow. Must stay green after every ring.
 3. **Refactor between rings, not during.** Build a ring → make it work → refactor → start next. Don't leave half-finished refactors.
 4. **One ring at a time.** No parallel rings. No "I'll start Ring 5 while finishing Ring 3."
 5. **Keep both PLAN.md and MVP-PLAN.md in sync.** PLAN.md is the spec; MVP-PLAN.md tracks status.
