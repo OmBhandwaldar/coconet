@@ -72,13 +72,25 @@ docker exec coconet-cli peer lifecycle chaincode package "/opt/chaincodes/$Packa
 if ($LASTEXITCODE -ne 0) { Write-Err "Package failed." }
 Write-OK "Packaged → /opt/chaincodes/$PackageFile"
 
-# ─── 4. Install on every peer ─────────────────────────────────────────────────
+# ─── 4. Install on every peer (tolerates "already installed") ─────────────────
 foreach ($org in $Orgs) {
     Write-Step "Installing on peer0.$($org.Domain)..."
     $env = Get-PeerEnv $org
-    docker exec @env coconet-cli peer lifecycle chaincode install "/opt/chaincodes/$PackageFile"
-    if ($LASTEXITCODE -ne 0) { Write-Err "Install failed on $($org.Name)." }
-    Write-OK "Installed on $($org.Name)."
+    $tmpFile = [System.IO.Path]::GetTempFileName()
+    docker exec @env coconet-cli sh -c "peer lifecycle chaincode install /opt/chaincodes/$PackageFile 2>&1" > $tmpFile
+    $exit = $LASTEXITCODE
+    $output = Get-Content $tmpFile -Raw
+    Remove-Item $tmpFile -Force
+    if ($exit -ne 0) {
+        if ($output -match "chaincode already successfully installed") {
+            Write-OK "Already installed on $($org.Name) - skipping."
+        } else {
+            Write-Host $output -ForegroundColor Red
+            Write-Err "Install failed on $($org.Name)."
+        }
+    } else {
+        Write-OK "Installed on $($org.Name)."
+    }
 }
 
 # ─── 5. Capture package ID ────────────────────────────────────────────────────
