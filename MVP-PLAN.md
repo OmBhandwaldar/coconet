@@ -326,7 +326,7 @@ Mark each block / ring as `[ ]` `[~]` `[x]` (not started / in progress / done):
 
 ### MVP Blocks
 - [x] Block 1 — Foundation
-- [~] Block 2 — Onboarding
+- [x] Block 2 — Onboarding
 - [ ] Block 3 — Trade Docs
 - [ ] Block 4 — Finance
 - [ ] Block 5 — Escrow + Bridge
