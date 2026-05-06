@@ -4,6 +4,8 @@ This file is the **actual build sequence** for the solo developer. It complement
 
 > **Strategy:** Build a thin vertical slice that touches every architectural component end-to-end (Block 1–6), then expand to full BRD scope ring by ring (Ring 1–12). The MVP demonstrates the **Tata Motors / Bharat Stampings / HDFC Bank** worked example end-to-end via Postman. Every later ring adds breadth on a working foundation.
 
+> **The flow itself — names, amounts, ordering, expected statuses — is in [EXAMPLE-FLOW.md](EXAMPLE-FLOW.md).** Treat it as a frozen test fixture: every Postman request and every integration test assertion must match it exactly.
+
 ---
 
 ## 1. Why This Approach
@@ -94,7 +96,7 @@ The riskiest seams in this project are **cross-chain communication** — Fabric 
 | Vitest configured for API tests + first dummy test passing | Vitest |
 | Mocha + chai + sinon scaffolded for chaincode tests | Mocha + chai + sinon |
 | Hardhat test scaffold with one passing dummy contract test | Hardhat + chai |
-| Empty Postman collection committed at `/postman/scm.postman_collection.json` | Postman |
+| Empty Postman collection committed at `/postman/coconet.postman_collection.json` | Postman |
 | Placeholder integration test asserting `GET /health` returns 200 | Vitest + supertest |
 
 **BRD mapping:** Phase 1A, 1B, 1C from PLAN.md (scoped down)
@@ -321,8 +323,8 @@ Each ring is independently shippable. After every ring, the integration test mus
 Mark each block / ring as `[ ]` `[~]` `[x]` (not started / in progress / done):
 
 ### MVP Blocks
-- [ ] Block 1 — Foundation
-- [ ] Block 2 — Onboarding
+- [x] Block 1 — Foundation
+- [~] Block 2 — Onboarding
 - [ ] Block 3 — Trade Docs
 - [ ] Block 4 — Finance
 - [ ] Block 5 — Escrow + Bridge

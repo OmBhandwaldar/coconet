@@ -1,6 +1,8 @@
 # Permissioned Blockchain Platform — Build Plan
 ## Based strictly on: Permissioned_blockchain_escrow_final_BRD_SRS (v1.1, 12 April 2026)
 
+> **Worked example:** the canonical 14-step Tata / Bharat / HDFC trade flow + company onboarding UX live in **[EXAMPLE-FLOW.md](EXAMPLE-FLOW.md)**. That file is the test fixture every chaincode function and API route in this plan must satisfy.
+
 ---
 
 ## Tech Stack

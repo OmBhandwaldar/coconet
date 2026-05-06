@@ -397,7 +397,9 @@ Every chaincode state transition auto-calls `audit-cc.logEvent()` — enforces N
 
 ## 17. Real Example Reference
 
-See the full 14-step worked example in conversation history / PLAN.md with Tata Motors + Bharat Stampings + HDFC Bank + SecureStore + BlueDart — walks through a ₹2.47 crore deal end-to-end including pre-shipment finance, invoice discounting, escrow with net settlement, and final payment breakdown.
+The full 14-step worked example lives in **[EXAMPLE-FLOW.md](EXAMPLE-FLOW.md)** — Tata Motors + Bharat Stampings + HDFC Bank + SecureStore + BlueDart, walking through a ₹2.47 crore deal end-to-end including pre-shipment finance, invoice discounting, escrow with net settlement, and final payment breakdown. Also covers the company onboarding UX (Stages 1–11).
+
+**Read EXAMPLE-FLOW.md when:** building a chaincode function, writing a Postman request, or implementing a state transition — the story tells you who calls what with what data. Field names and amounts there are authoritative.
 
 Key math in that example (for anyone implementing):
 - Invoice discounting: HDFC pays supplier `invoice × (1 - discount_rate)` → collects full `invoice` from escrow → profit = discount
