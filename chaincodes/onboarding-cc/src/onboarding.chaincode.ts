@@ -36,6 +36,11 @@ export interface Organization {
   kyb_verified: boolean;
   risk_tier?: RiskTier;
 
+  // Maker-checker thresholds — per transaction type, amount above which a
+  // checker signature is required. Enforcement engine arrives in Ring 11
+  // (Rule-06); this field just stores the configuration on chain.
+  maker_checker_thresholds: Record<string, number>;
+
   created_at: string;
   updated_at: string;
 }
@@ -107,6 +112,7 @@ export class OnboardingChaincode extends Contract {
       status: 'Pending',
       roles: input.roles ?? [],
       kyb_verified: false,
+      maker_checker_thresholds: {},
       created_at: now,
       updated_at: now,
     };
@@ -178,6 +184,44 @@ export class OnboardingChaincode extends Contract {
     return JSON.stringify(org);
   }
 
+  // ─── BR-09 / Rule-06: Maker-checker thresholds (storage only — Ring 11 enforces) ──
+  @Transaction()
+  async setMakerCheckerThreshold(
+    ctx: Context,
+    orgId: string,
+    txType: string,
+    threshold: string,
+  ): Promise<string> {
+    const org = await this.getOrg(ctx, orgId);
+    if (org.status !== 'Approved') {
+      throw new Error(`Cannot set threshold on org in status ${org.status}`);
+    }
+    if (!txType) throw new Error('txType is required');
+    const amount = Number(threshold);
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new Error(`Invalid threshold: ${threshold}. Must be a non-negative number.`);
+    }
+
+    org.maker_checker_thresholds[txType] = amount;
+    org.updated_at = this.txTimestamp(ctx);
+
+    await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
+    ctx.stub.setEvent(
+      'MakerCheckerThresholdSet',
+      Buffer.from(JSON.stringify({ org_id: orgId, tx_type: txType, threshold: amount })),
+    );
+
+    return JSON.stringify(org);
+  }
+
+  @Transaction(false)
+  @Returns('string')
+  async getMakerCheckerThreshold(ctx: Context, orgId: string, txType: string): Promise<string> {
+    const org = await this.getOrg(ctx, orgId);
+    const threshold = org.maker_checker_thresholds[txType] ?? 0;
+    return JSON.stringify({ org_id: orgId, tx_type: txType, threshold });
+  }
+
   // ─── FR-ONB-04: Read org ──────────────────────────────────────────────────
   @Transaction(false)
   @Returns('string')
@@ -198,6 +242,9 @@ export class OnboardingChaincode extends Contract {
   private async getOrg(ctx: Context, orgId: string): Promise<Organization> {
     const data = await ctx.stub.getState(this.orgKey(orgId));
     if (!data || data.length === 0) throw new Error(`Organization ${orgId} not found`);
-    return JSON.parse(data.toString()) as Organization;
+    const org = JSON.parse(data.toString()) as Organization;
+    // Backfill default for orgs created before maker_checker_thresholds was added.
+    if (!org.maker_checker_thresholds) org.maker_checker_thresholds = {};
+    return org;
   }
 }

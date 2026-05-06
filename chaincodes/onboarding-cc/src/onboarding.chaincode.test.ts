@@ -154,6 +154,58 @@ describe('OnboardingChaincode', () => {
     });
   });
 
+  describe('setMakerCheckerThreshold', () => {
+    it('stores threshold on Approved org and reads it back', async () => {
+      const state: Record<string, Buffer> = {};
+      const ctx = makeCtx(state);
+      await cc.createOrganization(ctx, JSON.stringify({ ...validTata, org_id: 'mck-1' }));
+      await cc.updateOrganizationStatus(ctx, 'mck-1', 'Approved');
+
+      await cc.setMakerCheckerThreshold(ctx, 'mck-1', 'Invoice', '5000000');
+      const result = await cc.getMakerCheckerThreshold(ctx, 'mck-1', 'Invoice');
+      expect(JSON.parse(result)).to.deep.equal({ org_id: 'mck-1', tx_type: 'Invoice', threshold: 5000000 });
+    });
+
+    it('overwrites existing threshold for same tx_type', async () => {
+      const state: Record<string, Buffer> = {};
+      const ctx = makeCtx(state);
+      await cc.createOrganization(ctx, JSON.stringify({ ...validTata, org_id: 'mck-2' }));
+      await cc.updateOrganizationStatus(ctx, 'mck-2', 'Approved');
+
+      await cc.setMakerCheckerThreshold(ctx, 'mck-2', 'PO', '1000000');
+      await cc.setMakerCheckerThreshold(ctx, 'mck-2', 'PO', '2500000');
+      const result = await cc.getMakerCheckerThreshold(ctx, 'mck-2', 'PO');
+      expect(JSON.parse(result).threshold).to.equal(2500000);
+    });
+
+    it('returns 0 for unset tx_type', async () => {
+      const state: Record<string, Buffer> = {};
+      const ctx = makeCtx(state);
+      await cc.createOrganization(ctx, JSON.stringify({ ...validTata, org_id: 'mck-3' }));
+      const result = await cc.getMakerCheckerThreshold(ctx, 'mck-3', 'NeverSet');
+      expect(JSON.parse(result).threshold).to.equal(0);
+    });
+
+    it('rejects threshold on non-Approved org', async () => {
+      const state: Record<string, Buffer> = {};
+      const ctx = makeCtx(state);
+      await cc.createOrganization(ctx, JSON.stringify({ ...validTata, org_id: 'mck-4' }));
+      await expect(
+        cc.setMakerCheckerThreshold(ctx, 'mck-4', 'Invoice', '1000000')
+      ).to.be.rejectedWith(/Cannot set threshold/);
+    });
+
+    it('rejects negative threshold', async () => {
+      const state: Record<string, Buffer> = {};
+      const ctx = makeCtx(state);
+      await cc.createOrganization(ctx, JSON.stringify({ ...validTata, org_id: 'mck-5' }));
+      await cc.updateOrganizationStatus(ctx, 'mck-5', 'Approved');
+      await expect(
+        cc.setMakerCheckerThreshold(ctx, 'mck-5', 'Invoice', '-100')
+      ).to.be.rejectedWith(/Invalid threshold/);
+    });
+  });
+
   describe('setRiskTier', () => {
     it('sets risk tier on Approved org', async () => {
       const state: Record<string, Buffer> = {};
