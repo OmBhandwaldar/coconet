@@ -10,7 +10,7 @@
 #   2. .\scripts\setup-channel.ps1 (all peers joined buyer-supplier-channel)
 
 param(
-    [string]$CcName   = "onboarding",
+    [string]$CcName   = "onboarding-cc",
     [string]$CcDir    = "onboarding-cc",
     [string]$Version  = "1.0",
     [int]$Sequence    = 1,

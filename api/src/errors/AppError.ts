@@ -39,3 +39,14 @@ export class UnauthorizedError extends AppError {
     super(401, message, 'UNAUTHORIZED');
   }
 }
+
+export class FabricError extends AppError {
+  constructor(
+    public readonly chaincode: string,
+    public readonly fn: string,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(502, `Fabric ${chaincode}.${fn}: ${message}`, 'FABRIC_ERROR');
+  }
+}
