@@ -1,0 +1,59 @@
+OrdererOrgs:
+  - Name: Orderer
+    Domain: coconet.local
+    EnableNodeOUs: true
+    Specs:
+      - Hostname: orderer
+        SANS:
+          - localhost
+
+PeerOrgs:
+  - Name: Buyer
+    Domain: buyer.coconet.local
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+    Users:
+      Count: 2
+
+  - Name: Supplier
+    Domain: supplier.coconet.local
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+    Users:
+      Count: 2
+
+  - Name: Lender
+    Domain: lender.coconet.local
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+    Users:
+      Count: 2
+
+  - Name: Platform
+    Domain: platform.coconet.local
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+    Users:
+      Count: 2
+
+  - Name: Auditor
+    Domain: auditor.coconet.local
+    EnableNodeOUs: true
+    Template:
+      Count: 1
+      SANS:
+        - localhost
+    Users:
+      Count: 1

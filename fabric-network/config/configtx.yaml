@@ -1,0 +1,217 @@
+---
+Organizations:
+  - &OrdererOrg
+    Name: OrdererMSP
+    ID: OrdererMSP
+    MSPDir: ../crypto-config/ordererOrganizations/coconet.local/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Writers:
+        Type: Signature
+        Rule: "OR('OrdererMSP.member')"
+      Admins:
+        Type: Signature
+        Rule: "OR('OrdererMSP.admin')"
+    OrdererEndpoints:
+      - orderer.coconet.local:7050
+
+  - &BuyerOrg
+    Name: BuyerMSP
+    ID: BuyerMSP
+    MSPDir: ../crypto-config/peerOrganizations/buyer.coconet.local/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('BuyerMSP.admin', 'BuyerMSP.peer', 'BuyerMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('BuyerMSP.admin', 'BuyerMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('BuyerMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('BuyerMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.buyer.coconet.local
+        Port: 7051
+
+  - &SupplierOrg
+    Name: SupplierMSP
+    ID: SupplierMSP
+    MSPDir: ../crypto-config/peerOrganizations/supplier.coconet.local/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('SupplierMSP.admin', 'SupplierMSP.peer', 'SupplierMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('SupplierMSP.admin', 'SupplierMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('SupplierMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('SupplierMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.supplier.coconet.local
+        Port: 8051
+
+  - &LenderOrg
+    Name: LenderMSP
+    ID: LenderMSP
+    MSPDir: ../crypto-config/peerOrganizations/lender.coconet.local/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('LenderMSP.admin', 'LenderMSP.peer', 'LenderMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('LenderMSP.admin', 'LenderMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('LenderMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('LenderMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.lender.coconet.local
+        Port: 9051
+
+  - &PlatformOrg
+    Name: PlatformMSP
+    ID: PlatformMSP
+    MSPDir: ../crypto-config/peerOrganizations/platform.coconet.local/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('PlatformMSP.admin', 'PlatformMSP.peer', 'PlatformMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('PlatformMSP.admin', 'PlatformMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('PlatformMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('PlatformMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.platform.coconet.local
+        Port: 10051
+
+  - &AuditorOrg
+    Name: AuditorMSP
+    ID: AuditorMSP
+    MSPDir: ../crypto-config/peerOrganizations/auditor.coconet.local/msp
+    Policies:
+      Readers:
+        Type: Signature
+        Rule: "OR('AuditorMSP.admin', 'AuditorMSP.peer', 'AuditorMSP.client')"
+      Writers:
+        Type: Signature
+        Rule: "OR('AuditorMSP.admin', 'AuditorMSP.client')"
+      Admins:
+        Type: Signature
+        Rule: "OR('AuditorMSP.admin')"
+      Endorsement:
+        Type: Signature
+        Rule: "OR('AuditorMSP.peer')"
+    AnchorPeers:
+      - Host: peer0.auditor.coconet.local
+        Port: 11051
+
+Capabilities:
+  Channel: &ChannelCapabilities
+    V2_0: true
+  Orderer: &OrdererCapabilities
+    V2_0: true
+  Application: &ApplicationCapabilities
+    V2_5: true
+
+Application: &ApplicationDefaults
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    LifecycleEndorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+    Endorsement:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Endorsement"
+  Capabilities:
+    <<: *ApplicationCapabilities
+
+Orderer: &OrdererDefaults
+  OrdererType: etcdraft
+  Addresses:
+    - orderer.coconet.local:7050
+  EtcdRaft:
+    Consenters:
+      - Host: orderer.coconet.local
+        Port: 7050
+        ClientTLSCert: ../crypto-config/ordererOrganizations/coconet.local/orderers/orderer.coconet.local/tls/server.crt
+        ServerTLSCert: ../crypto-config/ordererOrganizations/coconet.local/orderers/orderer.coconet.local/tls/server.crt
+  BatchTimeout: 2s
+  BatchSize:
+    MaxMessageCount: 10
+    AbsoluteMaxBytes: 99 MB
+    PreferredMaxBytes: 512 KB
+  Organizations:
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+    BlockValidation:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+  Capabilities:
+    <<: *OrdererCapabilities
+
+Channel: &ChannelDefaults
+  Policies:
+    Readers:
+      Type: ImplicitMeta
+      Rule: "ANY Readers"
+    Writers:
+      Type: ImplicitMeta
+      Rule: "ANY Writers"
+    Admins:
+      Type: ImplicitMeta
+      Rule: "MAJORITY Admins"
+  Capabilities:
+    <<: *ChannelCapabilities
+
+Profiles:
+  # MVP channel: Buyer + Supplier + Lender + Platform + Auditor all on one channel
+  BuyerSupplierChannel:
+    <<: *ChannelDefaults
+    Orderer:
+      <<: *OrdererDefaults
+      Organizations:
+        - *OrdererOrg
+      Capabilities: *OrdererCapabilities
+    Application:
+      <<: *ApplicationDefaults
+      Organizations:
+        - *BuyerOrg
+        - *SupplierOrg
+        - *LenderOrg
+        - *PlatformOrg
+        - *AuditorOrg
+      Capabilities: *ApplicationCapabilities
