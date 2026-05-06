@@ -91,6 +91,8 @@ services:
       - CORE_METRICS_PROVIDER=prometheus
       - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0buyer"}
       - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=coconet_coconet-net
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ./fabric-network/crypto-config/peerOrganizations/buyer.coconet.local/peers/peer0.buyer.coconet.local/msp:/etc/hyperledger/fabric/msp
@@ -129,6 +131,8 @@ services:
       - CORE_METRICS_PROVIDER=prometheus
       - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0supplier"}
       - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=coconet_coconet-net
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ./fabric-network/crypto-config/peerOrganizations/supplier.coconet.local/peers/peer0.supplier.coconet.local/msp:/etc/hyperledger/fabric/msp
@@ -167,6 +171,8 @@ services:
       - CORE_METRICS_PROVIDER=prometheus
       - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0lender"}
       - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=coconet_coconet-net
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ./fabric-network/crypto-config/peerOrganizations/lender.coconet.local/peers/peer0.lender.coconet.local/msp:/etc/hyperledger/fabric/msp
@@ -205,6 +211,8 @@ services:
       - CORE_METRICS_PROVIDER=prometheus
       - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0platform"}
       - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=coconet_coconet-net
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ./fabric-network/crypto-config/peerOrganizations/platform.coconet.local/peers/peer0.platform.coconet.local/msp:/etc/hyperledger/fabric/msp
@@ -243,6 +251,8 @@ services:
       - CORE_METRICS_PROVIDER=prometheus
       - CHAINCODE_AS_A_SERVICE_BUILDER_CONFIG={"peername":"peer0auditor"}
       - CORE_CHAINCODE_EXECUTETIMEOUT=300s
+      - CORE_VM_ENDPOINT=unix:///host/var/run/docker.sock
+      - CORE_VM_DOCKER_HOSTCONFIG_NETWORKMODE=coconet_coconet-net
     volumes:
       - /var/run/docker.sock:/host/var/run/docker.sock
       - ./fabric-network/crypto-config/peerOrganizations/auditor.coconet.local/peers/peer0.auditor.coconet.local/msp:/etc/hyperledger/fabric/msp
