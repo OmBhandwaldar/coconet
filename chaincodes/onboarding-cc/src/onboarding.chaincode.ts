@@ -1,17 +1,52 @@
 import { Context, Contract, Info, Returns, Transaction } from 'fabric-contract-api';
 
+export type OrgType = 'Buyer' | 'Supplier' | 'Lender' | 'Platform' | 'Auditor';
+export type OrgStatus = 'Pending' | 'Approved' | 'Suspended' | 'Closed';
+export type RiskTier = 'Prime' | 'Standard' | 'High-touch';
+
 export interface Organization {
+  // Identity
   org_id: string;
   legal_name: string;
-  org_type: 'Buyer' | 'Supplier' | 'Lender' | 'Platform' | 'Auditor';
+  org_type: OrgType;
+  msp_id: string;
+
+  // Registration (India)
   registration_number: string;
+  gstin: string;
+  pan: string;
   country: string;
-  status: 'Pending' | 'Approved' | 'Suspended' | 'Closed';
+
+  // Contact
+  contact_email: string;
+  registered_address: string;
+
+  // Profile (Stage 2 of onboarding — optional at create, fillable later)
+  incorporation_year?: number;
+  industry?: string;
+  turnover_band?: string;
+  employee_count?: number;
+
+  // Banking (Stage 5 — tokenized reference, never raw account number)
+  bank_account_ref?: string;
+
+  // Lifecycle
+  status: OrgStatus;
   roles: string[];
   kyb_verified: boolean;
+  risk_tier?: RiskTier;
+
   created_at: string;
   updated_at: string;
 }
+
+const ORG_TYPES: OrgType[] = ['Buyer', 'Supplier', 'Lender', 'Platform', 'Auditor'];
+const RISK_TIERS: RiskTier[] = ['Prime', 'Standard', 'High-touch'];
+
+// India-specific identifier formats
+const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[0-9]{1}[A-Z]{1}[0-9A-Z]{1}$/;
+const PAN_REGEX = /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 @Info({ title: 'OnboardingChaincode', description: 'FR-ONB-01 to FR-ONB-04' })
 export class OnboardingChaincode extends Contract {
@@ -21,9 +56,25 @@ export class OnboardingChaincode extends Contract {
   async createOrganization(ctx: Context, orgJson: string): Promise<string> {
     const input = JSON.parse(orgJson) as Partial<Organization>;
 
+    // Required fields
     if (!input.org_id) throw new Error('org_id is required');
     if (!input.legal_name) throw new Error('legal_name is required');
     if (!input.org_type) throw new Error('org_type is required');
+    if (!input.msp_id) throw new Error('msp_id is required');
+    if (!input.gstin) throw new Error('gstin is required');
+    if (!input.pan) throw new Error('pan is required');
+    if (!input.contact_email) throw new Error('contact_email is required');
+    if (!input.registered_address) throw new Error('registered_address is required');
+    if (!input.registration_number) throw new Error('registration_number is required');
+    if (!input.country) throw new Error('country is required');
+
+    // Format validation
+    if (!ORG_TYPES.includes(input.org_type)) {
+      throw new Error(`Invalid org_type: ${input.org_type}. Must be one of ${ORG_TYPES.join(', ')}`);
+    }
+    if (!GSTIN_REGEX.test(input.gstin)) throw new Error(`Invalid GSTIN format: ${input.gstin}`);
+    if (!PAN_REGEX.test(input.pan)) throw new Error(`Invalid PAN format: ${input.pan}`);
+    if (!EMAIL_REGEX.test(input.contact_email)) throw new Error(`Invalid contact_email: ${input.contact_email}`);
 
     const exists = await this.orgExists(ctx, input.org_id);
     if (exists) throw new Error(`Organization ${input.org_id} already exists`);
@@ -33,8 +84,18 @@ export class OnboardingChaincode extends Contract {
       org_id: input.org_id,
       legal_name: input.legal_name,
       org_type: input.org_type,
-      registration_number: input.registration_number ?? '',
-      country: input.country ?? '',
+      msp_id: input.msp_id,
+      registration_number: input.registration_number,
+      gstin: input.gstin,
+      pan: input.pan,
+      country: input.country,
+      contact_email: input.contact_email,
+      registered_address: input.registered_address,
+      incorporation_year: input.incorporation_year,
+      industry: input.industry,
+      turnover_band: input.turnover_band,
+      employee_count: input.employee_count,
+      bank_account_ref: input.bank_account_ref,
       status: 'Pending',
       roles: input.roles ?? [],
       kyb_verified: false,
@@ -43,7 +104,11 @@ export class OnboardingChaincode extends Contract {
     };
 
     await ctx.stub.putState(this.orgKey(input.org_id), Buffer.from(JSON.stringify(org)));
-    ctx.stub.setEvent('OrganizationCreated', Buffer.from(JSON.stringify({ org_id: org.org_id, org_type: org.org_type })));
+    ctx.stub.setEvent('OrganizationCreated', Buffer.from(JSON.stringify({
+      org_id: org.org_id,
+      org_type: org.org_type,
+      msp_id: org.msp_id,
+    })));
 
     return JSON.stringify(org);
   }
@@ -53,17 +118,18 @@ export class OnboardingChaincode extends Contract {
   async updateOrganizationStatus(ctx: Context, orgId: string, newStatus: string): Promise<string> {
     const org = await this.getOrg(ctx, orgId);
 
-    const allowed: Record<Organization['status'], Organization['status'][]> = {
+    const allowed: Record<OrgStatus, OrgStatus[]> = {
       Pending: ['Approved', 'Closed'],
       Approved: ['Suspended', 'Closed'],
       Suspended: ['Approved', 'Closed'],
       Closed: [],
     };
-    if (!allowed[org.status].includes(newStatus as Organization['status'])) {
+    if (!allowed[org.status].includes(newStatus as OrgStatus)) {
       throw new Error(`Illegal transition ${org.status} → ${newStatus}`);
     }
 
-    org.status = newStatus as Organization['status'];
+    org.status = newStatus as OrgStatus;
+    if (org.status === 'Approved') org.kyb_verified = true;
     org.updated_at = new Date().toISOString();
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
@@ -82,6 +148,24 @@ export class OnboardingChaincode extends Contract {
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
     ctx.stub.setEvent('RoleAssigned', Buffer.from(JSON.stringify({ org_id: orgId, role })));
+
+    return JSON.stringify(org);
+  }
+
+  // ─── Stage 7: Risk tier assignment (Prime / Standard / High-touch) ───────
+  @Transaction()
+  async setRiskTier(ctx: Context, orgId: string, tier: string): Promise<string> {
+    const org = await this.getOrg(ctx, orgId);
+    if (org.status !== 'Approved') throw new Error(`Cannot set risk tier on org in status ${org.status}`);
+    if (!RISK_TIERS.includes(tier as RiskTier)) {
+      throw new Error(`Invalid risk_tier: ${tier}. Must be one of ${RISK_TIERS.join(', ')}`);
+    }
+
+    org.risk_tier = tier as RiskTier;
+    org.updated_at = new Date().toISOString();
+
+    await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
+    ctx.stub.setEvent('RiskTierAssigned', Buffer.from(JSON.stringify({ org_id: orgId, risk_tier: tier })));
 
     return JSON.stringify(org);
   }
