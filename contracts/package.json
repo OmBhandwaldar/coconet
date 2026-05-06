@@ -1,0 +1,23 @@
+{
+  "name": "@coconet/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "test:coverage": "npx hardhat coverage",
+    "node": "npx hardhat node",
+    "deploy:local": "npx hardhat run scripts/deploy.ts --network localhost"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
+    "@types/node": "^20.12.7",
+    "chai": "^4.4.1",
+    "hardhat": "^2.22.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@openzeppelin/contracts": "^5.0.2"
+  }
+}
