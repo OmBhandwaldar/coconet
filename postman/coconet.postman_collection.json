@@ -2,14 +2,17 @@
   "info": {
     "_postman_id": "coconet-platform-collection",
     "name": "CocoNet Platform — Tata/Bharat/HDFC Demo",
-    "description": "Master collection for the 14-step trade finance demo flow.",
+    "description": "Master collection for the 14-step trade finance demo flow. Block 2 — onboarding endpoints (5).",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
     { "key": "base_url", "value": "http://localhost:3000" },
-    { "key": "buyer_id", "value": "tata-motors-001" },
-    { "key": "supplier_id", "value": "bharat-stampings-001" },
-    { "key": "lender_id", "value": "hdfc-bank-001" },
+    { "key": "buyer_id", "value": "tata-001" },
+    { "key": "supplier_id", "value": "bharat-001" },
+    { "key": "supplier2_id", "value": "mforge-001" },
+    { "key": "lender_id", "value": "hdfc-001" },
+    { "key": "platform_id", "value": "platform-001" },
+    { "key": "auditor_id", "value": "auditor-001" },
     { "key": "po_id", "value": "" },
     { "key": "invoice_id", "value": "" },
     { "key": "finance_request_id", "value": "" },
@@ -17,12 +20,285 @@
   ],
   "item": [
     {
-      "name": "00 — Health Check",
-      "request": {
-        "method": "GET",
-        "header": [],
-        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
-      }
+      "name": "00 — Health",
+      "item": [
+        {
+          "name": "GET /health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('status=ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET /api/health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": { "raw": "{{base_url}}/api/health", "host": ["{{base_url}}"], "path": ["api", "health"] }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('returns correlationId', () => pm.expect(pm.response.json().data.correlationId).to.be.a('string'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "01 — Onboarding",
+      "item": [
+        {
+          "name": "POST create — Tata Motors (Buyer)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{buyer_id}}\",\n  \"legal_name\": \"Tata Motors Ltd\",\n  \"org_type\": \"Buyer\",\n  \"msp_id\": \"BuyerMSP\",\n  \"registration_number\": \"L28920MH1945PLC004520\",\n  \"gstin\": \"27AAACT2727Q1ZW\",\n  \"pan\": \"AAACT2727Q\",\n  \"country\": \"IN\",\n  \"contact_email\": \"procurement@tatamotors.com\",\n  \"registered_address\": \"Bombay House, Mumbai 400001\",\n  \"incorporation_year\": 1945,\n  \"industry\": \"Automotive\",\n  \"turnover_band\": \"> 500 cr\",\n  \"employee_count\": 80000\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created (or 502 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 502]));",
+                  "if (pm.response.code === 201) {",
+                  "  const o = pm.response.json().data;",
+                  "  pm.expect(o.status).to.eql('Pending');",
+                  "  pm.expect(o.kyb_verified).to.eql(false);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST create — Bharat Stampings (Supplier)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{supplier_id}}\",\n  \"legal_name\": \"Bharat Stampings Pvt Ltd\",\n  \"org_type\": \"Supplier\",\n  \"msp_id\": \"SupplierMSP\",\n  \"registration_number\": \"U28910MH2002PTC135421\",\n  \"gstin\": \"27AABCB1234C1ZX\",\n  \"pan\": \"AABCB1234C\",\n  \"country\": \"IN\",\n  \"contact_email\": \"sales@bharatstampings.com\",\n  \"registered_address\": \"Plot 14, MIDC Phase II, Pune 411019\",\n  \"incorporation_year\": 2002\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations"]
+            }
+          }
+        },
+        {
+          "name": "POST create — Maharashtra Forge (Supplier 2)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{supplier2_id}}\",\n  \"legal_name\": \"Maharashtra Forge Ltd\",\n  \"org_type\": \"Supplier\",\n  \"msp_id\": \"SupplierMSP\",\n  \"registration_number\": \"U27109MH1998PLC114598\",\n  \"gstin\": \"27AABCM5678D1ZY\",\n  \"pan\": \"AABCM5678D\",\n  \"country\": \"IN\",\n  \"contact_email\": \"sales@mforge.in\",\n  \"registered_address\": \"23 Industrial Estate, Aurangabad 431001\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations"]
+            }
+          }
+        },
+        {
+          "name": "POST create — HDFC Bank (Lender)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{lender_id}}\",\n  \"legal_name\": \"HDFC Bank Ltd\",\n  \"org_type\": \"Lender\",\n  \"msp_id\": \"LenderMSP\",\n  \"registration_number\": \"L65920MH1994PLC080618\",\n  \"gstin\": \"27AAACH2702H1Z9\",\n  \"pan\": \"AAACH2702H\",\n  \"country\": \"IN\",\n  \"contact_email\": \"tradefinance@hdfcbank.com\",\n  \"registered_address\": \"HDFC Bank House, Mumbai 400013\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations"]
+            }
+          }
+        },
+        {
+          "name": "POST create — Platform",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{platform_id}}\",\n  \"legal_name\": \"CocoNet Platform Pvt Ltd\",\n  \"org_type\": \"Platform\",\n  \"msp_id\": \"PlatformMSP\",\n  \"registration_number\": \"U72900MH2026PTC400001\",\n  \"gstin\": \"27AAACP9999P1ZQ\",\n  \"pan\": \"AAACP9999P\",\n  \"country\": \"IN\",\n  \"contact_email\": \"ops@coconet.io\",\n  \"registered_address\": \"BKC, Bandra East, Mumbai 400051\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations"]
+            }
+          }
+        },
+        {
+          "name": "POST create — Auditor",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"{{auditor_id}}\",\n  \"legal_name\": \"CocoNet Audit Services LLP\",\n  \"org_type\": \"Auditor\",\n  \"msp_id\": \"AuditorMSP\",\n  \"registration_number\": \"AAB-1234\",\n  \"gstin\": \"27AAACA8888K1Z5\",\n  \"pan\": \"AAACA8888K\",\n  \"country\": \"IN\",\n  \"contact_email\": \"audit@coconet.io\",\n  \"registered_address\": \"BKC, Bandra East, Mumbai 400051\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations"]
+            }
+          }
+        },
+        {
+          "name": "GET org by id (Tata)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations/{{buyer_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations", "{{buyer_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('org_id matches', () => pm.expect(pm.response.json().data.org_id).to.eql(pm.variables.get('buyer_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT status — Approve Tata",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"status\": \"Approved\" }" },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations/{{buyer_id}}/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations", "{{buyer_id}}", "status"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  const o = pm.response.json().data;",
+                  "  pm.expect(o.status).to.eql('Approved');",
+                  "  pm.expect(o.kyb_verified).to.eql(true);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST role — procurement_maker on Tata",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"role\": \"procurement_maker\" }" },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations/{{buyer_id}}/roles",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations", "{{buyer_id}}", "roles"]
+            }
+          }
+        },
+        {
+          "name": "POST risk-tier — Prime on Tata",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"risk_tier\": \"Prime\" }" },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations/{{buyer_id}}/risk-tier",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations", "{{buyer_id}}", "risk-tier"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "  pm.expect(pm.response.json().data.risk_tier).to.eql('Prime');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "VALIDATION — POST create with bad GSTIN (expect 400)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"org_id\": \"bad-gstin-001\",\n  \"legal_name\": \"Bad Org\",\n  \"org_type\": \"Buyer\",\n  \"msp_id\": \"BuyerMSP\",\n  \"registration_number\": \"X\",\n  \"gstin\": \"NOT-A-GSTIN\",\n  \"pan\": \"AAACT2727Q\",\n  \"country\": \"IN\",\n  \"contact_email\": \"a@b.com\",\n  \"registered_address\": \"X\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/onboarding/organizations",
+              "host": ["{{base_url}}"],
+              "path": ["api", "onboarding", "organizations"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
+                  "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
     }
   ]
 }
