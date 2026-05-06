@@ -1,0 +1,28 @@
+{
+  "info": {
+    "_postman_id": "coconet-platform-collection",
+    "name": "CocoNet Platform — Tata/Bharat/HDFC Demo",
+    "description": "Master collection for the 14-step trade finance demo flow.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "http://localhost:3000" },
+    { "key": "buyer_id", "value": "tata-motors-001" },
+    { "key": "supplier_id", "value": "bharat-stampings-001" },
+    { "key": "lender_id", "value": "hdfc-bank-001" },
+    { "key": "po_id", "value": "" },
+    { "key": "invoice_id", "value": "" },
+    { "key": "finance_request_id", "value": "" },
+    { "key": "escrow_payment_id", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "00 — Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": { "raw": "{{base_url}}/health", "host": ["{{base_url}}"], "path": ["health"] }
+      }
+    }
+  ]
+}
