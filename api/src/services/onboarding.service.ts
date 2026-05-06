@@ -22,8 +22,15 @@ export interface Organization {
   roles: string[];
   kyb_verified: boolean;
   risk_tier?: 'Prime' | 'Standard' | 'High-touch';
+  maker_checker_thresholds: Record<string, number>;
   created_at: string;
   updated_at: string;
+}
+
+export interface ThresholdResult {
+  org_id: string;
+  tx_type: string;
+  threshold: number;
 }
 
 const cc = env.FABRIC_CHAINCODE_ONBOARDING;
@@ -46,4 +53,19 @@ export async function assignRole(orgId: string, role: string): Promise<Organizat
 
 export async function setRiskTier(orgId: string, tier: string): Promise<Organization> {
   return invoke<Organization>(cc, 'setRiskTier', orgId, tier);
+}
+
+export async function setMakerCheckerThreshold(
+  orgId: string,
+  txType: string,
+  threshold: number,
+): Promise<Organization> {
+  return invoke<Organization>(cc, 'setMakerCheckerThreshold', orgId, txType, String(threshold));
+}
+
+export async function getMakerCheckerThreshold(
+  orgId: string,
+  txType: string,
+): Promise<ThresholdResult> {
+  return query<ThresholdResult>(cc, 'getMakerCheckerThreshold', orgId, txType);
 }

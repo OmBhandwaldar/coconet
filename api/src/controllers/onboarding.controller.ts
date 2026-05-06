@@ -35,3 +35,17 @@ export async function setRiskTier(req: Request, res: Response, next: NextFunctio
     res.json({ success: true, data: org, correlationId: req.correlationId });
   } catch (err) { next(err); }
 }
+
+export async function setMakerCheckerThreshold(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const org = await service.setMakerCheckerThreshold(req.params.id, req.params.txType, req.body.threshold);
+    res.json({ success: true, data: org, correlationId: req.correlationId });
+  } catch (err) { next(err); }
+}
+
+export async function getMakerCheckerThreshold(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const result = await service.getMakerCheckerThreshold(req.params.id, req.params.txType);
+    res.json({ success: true, data: result, correlationId: req.correlationId });
+  } catch (err) { next(err); }
+}

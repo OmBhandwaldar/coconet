@@ -46,4 +46,13 @@ export const setRiskTierSchema = z.object({
   body: z.object({ risk_tier: riskTierSchema }),
 });
 
+export const setMakerCheckerThresholdSchema = z.object({
+  params: z.object({ id: z.string().min(1), txType: z.string().min(1) }),
+  body: z.object({ threshold: z.number().nonnegative() }),
+});
+
+export const getMakerCheckerThresholdSchema = z.object({
+  params: z.object({ id: z.string().min(1), txType: z.string().min(1) }),
+});
+
 export type CreateOrganizationInput = z.infer<typeof createOrganizationSchema>['body'];

@@ -25,7 +25,7 @@ beforeEach(() => {
   vi.spyOn(fabricService, 'invoke').mockResolvedValue(fakeOrg);
   vi.spyOn(fabricService, 'query').mockResolvedValue(fakeOrg);
 });
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe('POST /api/onboarding/organizations', () => {
   it('creates org with 201 + correlationId', async () => {
@@ -100,5 +100,45 @@ describe('POST /api/onboarding/organizations/:id/risk-tier', () => {
   it('rejects invalid tier', async () => {
     const res = await request.post('/api/onboarding/organizations/tata-001/risk-tier').send({ risk_tier: 'Platinum' });
     expect(res.status).toBe(400);
+  });
+});
+
+describe('PUT /api/onboarding/organizations/:id/maker-checker-thresholds/:txType', () => {
+  it('sets threshold and stringifies amount for chaincode', async () => {
+    const res = await request
+      .put('/api/onboarding/organizations/tata-001/maker-checker-thresholds/Invoice')
+      .send({ threshold: 5000000 });
+    expect(res.status).toBe(200);
+    expect(fabricService.invoke).toHaveBeenCalledWith(
+      'onboarding-cc',
+      'setMakerCheckerThreshold',
+      'tata-001',
+      'Invoice',
+      '5000000',
+    );
+  });
+
+  it('rejects negative threshold with 400', async () => {
+    const res = await request
+      .put('/api/onboarding/organizations/tata-001/maker-checker-thresholds/Invoice')
+      .send({ threshold: -1 });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects non-numeric threshold with 400', async () => {
+    const res = await request
+      .put('/api/onboarding/organizations/tata-001/maker-checker-thresholds/Invoice')
+      .send({ threshold: 'lots' });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /api/onboarding/organizations/:id/maker-checker-thresholds/:txType', () => {
+  it('returns threshold for tx type', async () => {
+    vi.spyOn(fabricService, 'query').mockResolvedValue({ org_id: 'tata-001', tx_type: 'Invoice', threshold: 5000000 });
+    const res = await request.get('/api/onboarding/organizations/tata-001/maker-checker-thresholds/Invoice');
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ org_id: 'tata-001', tx_type: 'Invoice', threshold: 5000000 });
+    expect(fabricService.query).toHaveBeenCalledWith('onboarding-cc', 'getMakerCheckerThreshold', 'tata-001', 'Invoice');
   });
 });
