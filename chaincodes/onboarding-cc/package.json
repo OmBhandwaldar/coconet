@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "start": "node dist/index.js",
+    "start": "fabric-chaincode-node start",
     "test": "mocha --require ts-node/register 'src/**/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },

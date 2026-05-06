@@ -1,12 +1,4 @@
-import { ChaincodeInterface, ChaincodeResponse, ChaincodeStub } from 'fabric-shim';
-import { OnboardingChaincode } from './onboarding.chaincode.js';
+import { OnboardingChaincode } from './onboarding.chaincode';
 
-const chaincode = new OnboardingChaincode();
-
-export async function Init(stub: ChaincodeStub): Promise<ChaincodeResponse> {
-  return chaincode.Init(stub);
-}
-
-export async function Invoke(stub: ChaincodeStub): Promise<ChaincodeResponse> {
-  return chaincode.Invoke(stub);
-}
+export { OnboardingChaincode };
+export const contracts: any[] = [OnboardingChaincode];

@@ -51,6 +51,14 @@ const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 @Info({ title: 'OnboardingChaincode', description: 'FR-ONB-01 to FR-ONB-04' })
 export class OnboardingChaincode extends Contract {
 
+  // Deterministic timestamp from the transaction proposal — every endorsing
+  // peer computes the same value, so the read/write sets stay identical.
+  // Using `new Date()` here would cause ENDORSEMENT_POLICY_FAILURE on commit.
+  private txTimestamp(ctx: Context): string {
+    const ts = ctx.stub.getTxTimestamp();
+    return new Date(ts.seconds.low * 1000 + Math.floor(ts.nanos / 1e6)).toISOString();
+  }
+
   // ─── FR-ONB-01: Create organisation ──────────────────────────────────────
   @Transaction()
   async createOrganization(ctx: Context, orgJson: string): Promise<string> {
@@ -79,7 +87,7 @@ export class OnboardingChaincode extends Contract {
     const exists = await this.orgExists(ctx, input.org_id);
     if (exists) throw new Error(`Organization ${input.org_id} already exists`);
 
-    const now = new Date().toISOString();
+    const now = this.txTimestamp(ctx);
     const org: Organization = {
       org_id: input.org_id,
       legal_name: input.legal_name,
@@ -130,7 +138,7 @@ export class OnboardingChaincode extends Contract {
 
     org.status = newStatus as OrgStatus;
     if (org.status === 'Approved') org.kyb_verified = true;
-    org.updated_at = new Date().toISOString();
+    org.updated_at = this.txTimestamp(ctx);
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
     ctx.stub.setEvent('OrganizationStatusUpdated', Buffer.from(JSON.stringify({ org_id: orgId, status: newStatus })));
@@ -144,7 +152,7 @@ export class OnboardingChaincode extends Contract {
     const org = await this.getOrg(ctx, orgId);
     if (org.status !== 'Approved') throw new Error(`Cannot assign role to org in status ${org.status}`);
     if (!org.roles.includes(role)) org.roles.push(role);
-    org.updated_at = new Date().toISOString();
+    org.updated_at = this.txTimestamp(ctx);
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
     ctx.stub.setEvent('RoleAssigned', Buffer.from(JSON.stringify({ org_id: orgId, role })));
@@ -162,7 +170,7 @@ export class OnboardingChaincode extends Contract {
     }
 
     org.risk_tier = tier as RiskTier;
-    org.updated_at = new Date().toISOString();
+    org.updated_at = this.txTimestamp(ctx);
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
     ctx.stub.setEvent('RiskTierAssigned', Buffer.from(JSON.stringify({ org_id: orgId, risk_tier: tier })));

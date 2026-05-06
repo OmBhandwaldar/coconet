@@ -12,6 +12,7 @@ function makeCtx(state: Record<string, Buffer> = {}) {
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
     setEvent: sinon.stub(),
+    getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
   };
   return { stub } as any;
 }
