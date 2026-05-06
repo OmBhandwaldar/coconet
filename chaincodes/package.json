@@ -1,0 +1,27 @@
+{
+  "name": "@coconet/chaincodes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "mocha --recursive 'src/**/*.test.ts' --require tsx/esm",
+    "test:watch": "mocha --watch --recursive 'src/**/*.test.ts' --require tsx/esm",
+    "build": "tsc -b",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/chai": "^4.3.16",
+    "@types/mocha": "^10.0.6",
+    "@types/sinon": "^17.0.3",
+    "@types/node": "^20.12.7",
+    "chai": "^5.1.0",
+    "mocha": "^10.4.0",
+    "sinon": "^18.0.0",
+    "tsx": "^4.8.2",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "fabric-contract-api": "^2.5.0",
+    "fabric-shim": "^2.5.0"
+  }
+}
