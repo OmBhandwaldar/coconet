@@ -1,0 +1,14 @@
+# Hardhat build + run artifacts
+artifacts/
+cache/
+typechain-types/
+
+# solidity-coverage output
+coverage/
+coverage.json
+.coverage_artifacts/
+.coverage_cache/
+.coverage_contracts/
+
+# Local deployment addresses (machine-specific; live in .env)
+deployments.local.json
