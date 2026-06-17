@@ -15,7 +15,7 @@ function mockContract(overrides: Partial<{
   } as any;
 }
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => { vi.restoreAllMocks(); });
 
 describe('fabric.service', () => {
   describe('invoke', () => {
@@ -94,9 +94,9 @@ describe('fabric.service', () => {
       });
       vi.spyOn(gateway, 'getContract').mockReturnValue(contract);
 
-      const err = await query('onboarding-cc', 'getOrganization', 'missing-001').catch((e) => e);
+      const err = await query('onboarding-cc', 'getOrganization', 'missing-001').catch((e: unknown) => e);
       expect(err).toBeInstanceOf(FabricError);
-      expect(err.message).toMatch(/not found/);
+      expect((err as FabricError).message).toMatch(/not found/);
     });
   });
 });
