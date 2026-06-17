@@ -20,7 +20,8 @@
     { "key": "pre_fr_id", "value": "FR-PRE-001" },
     { "key": "disc_fr_id", "value": "FR-DISC-001" },
     { "key": "finance_request_id", "value": "" },
-    { "key": "escrow_payment_id", "value": "" }
+    { "key": "escrow_payment_id", "value": "" },
+    { "key": "escrow_pm_id", "value": "ESC-PM-01" }
   ],
   "item": [
     {
@@ -782,6 +783,57 @@
           "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
             "pm.test('200 OK', () => pm.response.to.have.status(200));",
             "pm.test('net_disbursed = 1,20,77,466', () => pm.expect(pm.response.json().data.net_disbursed).to.eql(12077466));"
+          ] } }]
+        }
+      ]
+    },
+    {
+      "name": "04 — Escrow (Polygon)",
+      "item": [
+        {
+          "name": "POST create escrow instruction ($269,022 to HDFC)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"escrow_payment_id\": \"{{escrow_pm_id}}\",\n  \"buyer_org_id\": \"{{buyer_id}}\",\n  \"beneficiary_org_id\": \"{{lender_id}}\",\n  \"linked_invoice_id\": \"BS-INV-ESCROW-02\",\n  \"amount_usd\": 269022\n}" },
+            "url": { "raw": "{{base_url}}/api/escrow/instructions", "host": ["{{base_url}}"], "path": ["api", "escrow", "instructions"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created (or 500 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 500]));",
+            "if (pm.response.code === 201) { pm.expect(pm.response.json().data.status).to.eql('Created'); }"
+          ] } }]
+        },
+        {
+          "name": "GET escrow instruction",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/api/escrow/instructions/{{escrow_pm_id}}", "host": ["{{base_url}}"], "path": ["api", "escrow", "instructions", "{{escrow_pm_id}}"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('amount_usd = 269022', () => pm.expect(pm.response.json().data.amount_usd).to.eql(269022));"
+          ] } }]
+        },
+        {
+          "name": "POST fund escrow",
+          "request": {
+            "method": "POST", "header": [],
+            "url": { "raw": "{{base_url}}/api/escrow/instructions/{{escrow_pm_id}}/fund", "host": ["{{base_url}}"], "path": ["api", "escrow", "instructions", "{{escrow_pm_id}}", "fund"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 500 if already funded)', () => pm.expect(pm.response.code).to.be.oneOf([200, 500]));"
+          ] } }]
+        },
+        {
+          "name": "GET status (Funded — release is bridge-driven, async)",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/api/escrow/instructions/{{escrow_pm_id}}/status", "host": ["{{base_url}}"], "path": ["api", "escrow", "instructions", "{{escrow_pm_id}}", "status"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('status Funded or Released', () => pm.expect(pm.response.json().data.status).to.be.oneOf(['Funded','Released']));",
+            "pm.test('funded true', () => pm.expect(pm.response.json().data.funded).to.eql(true));"
           ] } }]
         }
       ]

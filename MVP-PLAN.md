@@ -329,7 +329,7 @@ Mark each block / ring as `[ ]` `[~]` `[x]` (not started / in progress / done):
 - [x] Block 2 — Onboarding
 - [x] Block 3 — Trade Docs
 - [x] Block 4 — Finance
-- [ ] Block 5 — Escrow + Bridge
+- [x] Block 5 — Escrow + Bridge
 - [ ] Block 6 — Wire & Demo
 
 ### Expansion Rings
