@@ -23,7 +23,9 @@ const schema = z.object({
   MINIO_ACCESS_KEY: z.string(),
   MINIO_SECRET_KEY: z.string(),
   MINIO_BUCKET_DOCUMENTS: z.string().default('trade-documents'),
-  MINIO_USE_SSL: z.coerce.boolean().default(false),
+  // NOTE: z.coerce.boolean() is a footgun — Boolean("false") === true. Parse the
+  // string explicitly so MINIO_USE_SSL=false actually disables TLS.
+  MINIO_USE_SSL: z.string().default('false').transform((v) => v.toLowerCase() === 'true'),
 
   FABRIC_CHANNEL_NAME: z.string().default('buyer-supplier-channel'),
   FABRIC_CHAINCODE_ONBOARDING: z.string().default('onboarding-cc'),
