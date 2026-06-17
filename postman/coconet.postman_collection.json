@@ -13,8 +13,9 @@
     { "key": "lender_id", "value": "hdfc-001" },
     { "key": "platform_id", "value": "platform-001" },
     { "key": "auditor_id", "value": "auditor-001" },
-    { "key": "po_id", "value": "" },
-    { "key": "invoice_id", "value": "" },
+    { "key": "po_id", "value": "TM-PO-2024-0892" },
+    { "key": "grn_id", "value": "TM-GRN-2024-0892" },
+    { "key": "invoice_id", "value": "BS-INV-2024-0892" },
     { "key": "finance_request_id", "value": "" },
     { "key": "escrow_payment_id", "value": "" }
   ],
@@ -292,6 +293,302 @@
                 "exec": [
                   "pm.test('400 Bad Request', () => pm.response.to.have.status(400));",
                   "pm.test('VALIDATION_ERROR', () => pm.expect(pm.response.json().error.code).to.eql('VALIDATION_ERROR'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "02 — Trade Docs",
+      "item": [
+        {
+          "name": "POST create PO (Tata → Bharat, ₹2.5cr)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"po_id\": \"{{po_id}}\",\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"currency\": \"INR\",\n  \"gross_value\": 25000000,\n  \"item_description\": \"Pressed Steel Body Panels\",\n  \"quantity\": 10000,\n  \"price_per_unit\": 2500,\n  \"delivery_terms\": \"45 days, Pune Plant\",\n  \"payment_terms\": \"30 days after delivery\",\n  \"doc_hash\": \"po-hash-0892\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/purchase-orders",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "purchase-orders"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created (or 502 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 502]));",
+                  "if (pm.response.code === 201) {",
+                  "  pm.expect(pm.response.json().data.status).to.eql('Issued');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET PO by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/purchase-orders/{{po_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "purchase-orders", "{{po_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('po_id matches', () => pm.expect(pm.response.json().data.po_id).to.eql(pm.variables.get('po_id')));",
+                  "pm.test('gross_value 2.5cr', () => pm.expect(pm.response.json().data.gross_value).to.eql(25000000));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT acknowledge PO (supplier)",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"supplier_id\": \"{{supplier_id}}\" }" },
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/purchase-orders/{{po_id}}/acknowledge",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "purchase-orders", "{{po_id}}", "acknowledge"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 (or 502 if already past Issued)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+                  "if (pm.response.code === 200) {",
+                  "  pm.expect(pm.response.json().data.status).to.eql('Acknowledged');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST create GRN",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grn_id\": \"{{grn_id}}\",\n  \"po_id\": \"{{po_id}}\",\n  \"received_qty\": 10000\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/grn",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "grn"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created (or 502 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 502]));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT accept GRN",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/grn/{{grn_id}}/accept",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "grn", "{{grn_id}}", "accept"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 (or 502 if already accepted)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+                  "if (pm.response.code === 200) {",
+                  "  pm.expect(pm.response.json().data.status).to.eql('Accepted');",
+                  "  pm.expect(pm.response.json().data.accepted_qty).to.eql(10000);",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "POST submit invoice",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"invoice_id\": \"{{invoice_id}}\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"po_id\": \"{{po_id}}\",\n  \"grn_id\": \"{{grn_id}}\",\n  \"amount\": 25000000,\n  \"quantity\": 10000,\n  \"currency\": \"INR\",\n  \"due_date\": \"2024-12-31\",\n  \"doc_hash\": \"inv-hash-0892\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/invoices",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "invoices"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('201 Created (or 502 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 502]));",
+                  "if (pm.response.code === 201) {",
+                  "  pm.expect(pm.response.json().data.status).to.eql('Submitted');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT run 3-way match",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/invoices/{{invoice_id}}/match",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "invoices", "{{invoice_id}}", "match"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 (or 502 if not Submitted)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+                  "if (pm.response.code === 200) {",
+                  "  pm.expect(pm.response.json().data.match_result.passed).to.eql(true);",
+                  "  pm.expect(pm.response.json().data.status).to.eql('Matched');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET match-result",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/invoices/{{invoice_id}}/match-result",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "invoices", "{{invoice_id}}", "match-result"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('match passed', () => pm.expect(pm.response.json().data.passed).to.eql(true));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "PUT approve invoice",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/invoices/{{invoice_id}}/approve",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "invoices", "{{invoice_id}}", "approve"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 (or 502 if already Approved)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+                  "if (pm.response.code === 200) {",
+                  "  pm.expect(pm.response.json().data.status).to.eql('Approved');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET invoice by id",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/invoices/{{invoice_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "invoices", "{{invoice_id}}"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('invoice_id matches', () => pm.expect(pm.response.json().data.invoice_id).to.eql(pm.variables.get('invoice_id')));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "GET document verify (hash)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/trade-docs/documents/inv-hash-0892/verify",
+              "host": ["{{base_url}}"],
+              "path": ["api", "trade-docs", "documents", "inv-hash-0892", "verify"]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));",
+                  "pm.test('exists is boolean', () => pm.expect(pm.response.json().data.exists).to.be.a('boolean'));"
                 ],
                 "type": "text/javascript"
               }
