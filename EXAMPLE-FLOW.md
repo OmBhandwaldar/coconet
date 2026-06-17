@@ -2,6 +2,8 @@
 
 This file is the **frozen reference flow** the MVP must reproduce end-to-end. Names, amounts, and ordering here are authoritative — the Postman collection, integration test, and demo script all replay this flow.
 
+> **Currency note (MVP):** escrow currently settles in **USD (USDC/USDT)**, not INR — a deliberate MVP simplification (production uses an INR-pegged token). INR figures below carry their USD equivalent in oblique form `₹INR / $USD` at a fixed **1 USD = ₹92**.
+
 Two parts:
 1. **Company Onboarding — User Experience** — what an org goes through from sign-up to active
 2. **End-to-End Trade Flow** — the 14-step Tata / Bharat / HDFC deal
@@ -101,8 +103,8 @@ Fills:
 - Supplier: Bharat Stampings
 - Item: Pressed Steel Body Panels
 - Quantity: 10,000 units
-- Price per unit: ₹2,500
-- Total value: ₹2,50,00,000
+- Price per unit: ₹2,500 / $27.17
+- Total value: ₹2,50,00,000 / $271,739
 - Delivery date: 45 days
 - Delivery location: Pune Plant
 - Payment terms: 30 days after delivery
@@ -112,7 +114,7 @@ Submits for internal approval.
 
 Platform runs sanctions screening on both Tata Motors and Bharat Stampings → all clear ✓
 
-Priya (Tata Motors) receives notification — "PO worth ₹2.5 crore awaiting your approval".
+Priya (Tata Motors) receives notification — "PO worth ₹2.5 crore / $271,739 awaiting your approval".
 Reviews all details. Approves.
 
 **Result:** PO status → Issued. Document hash stored. Bharat Stampings notified instantly.
@@ -137,7 +139,7 @@ Opens: Finance → Pre-Shipment Finance → Apply.
 
 Fills:
 - Linked PO: TM-PO-2024-0892
-- Finance amount requested: ₹1,20,00,000
+- Finance amount requested: ₹1,20,00,000 / $130,435
 - Purpose: Raw material procurement
 
 Submits to HDFC Bank.
@@ -152,7 +154,7 @@ Reviews: PO, risk tier (Standard), Tata Motors' buyer quality score.
 Platform auto-calculates advance rate: 48%.
 Submits recommendation for approval.
 
-Nandita (HDFC Bank) receives notification — "Finance request ₹1.2 crore awaiting approval".
+Nandita (HDFC Bank) receives notification — "Finance request ₹1.2 crore / $130,435 awaiting approval".
 Reviews credit summary. Approves.
 
 ---
@@ -160,7 +162,7 @@ Reviews credit summary. Approves.
 ### Step 3A — Offer and Acceptance
 
 HDFC Bank sends formal offer to Bharat Stampings:
-- Advance amount: ₹1,20,00,000
+- Advance amount: ₹1,20,00,000 / $130,435
 - Interest rate: 12% p.a.
 - Tenor: 45 days
 - Security: Perfected lien on PO TM-PO-2024-0892
@@ -172,7 +174,7 @@ Reviews terms. Clicks: Accept Offer.
 Platform actions:
 - Perfects security interest on PO → `security_interest_state: Perfected`
 - PO locked against any other lender (Rule-02)
-- HDFC disburses ₹1,20,00,000 to Bharat Stampings' bank account
+- HDFC disburses ₹1,20,00,000 / $130,435 to Bharat Stampings' bank account
 
 **Result:** Finance status → Disbursed. PO status → Locked. Asset locking active.
 
@@ -253,7 +255,7 @@ Tata Motors and Bharat Stampings jointly decide:
 Kavitha (Bharat Stampings) logs into the platform.
 Opens: Invoices → Create New.
 
-Platform pre-fills from GRN: 9,900 units × ₹2,500 = ₹2,47,50,000.
+Platform pre-fills from GRN: 9,900 units × ₹2,500 / $27.17 = ₹2,47,50,000 / $269,022.
 Adds invoice number BS-INV-2024-1102, invoice date, due date (Day 51).
 Uploads invoice PDF — fingerprint stored. Submits.
 
@@ -286,7 +288,7 @@ Opens: Finance → Invoice Discounting → Apply.
 Fills:
 - Linked invoice: BS-INV-2024-1102
 - Discount rate: 2%
-- Expected early payment: ₹2,42,55,000
+- Expected early payment: ₹2,42,55,000 / $263,641
 
 Submits to HDFC Bank.
 
@@ -304,9 +306,9 @@ Nandita (HDFC Bank) reviews and gives final sign-off (Checker).
 ### Step 10A — Disbursement with Pre-Shipment Loan Net Settlement
 
 Platform calculates:
-- Gross invoice discounting disbursement: ₹2,42,55,000
-- Pre-shipment loan outstanding: ₹1,20,00,000 + accrued interest ₹1,77,534 = ₹1,21,77,534
-- **Net paid to Bharat Stampings: ₹1,20,77,466**
+- Gross invoice discounting disbursement: ₹2,42,55,000 / $263,641
+- Pre-shipment loan outstanding: ₹1,20,00,000 / $130,435 + accrued interest ₹1,77,534 / $1,930 = ₹1,21,77,534 / $132,365
+- **Net paid to Bharat Stampings: ₹1,20,77,466 / $131,277**
 - Pre-shipment loan automatically settled → status: Repaid → Closed
 - Security interest on PO released → `security_interest_state: Released`
 
@@ -315,7 +317,7 @@ Platform actions on invoice:
 - Security interest state: Perfected
 - Invoice locked against further assignment
 
-**Result:** Bharat Stampings receives ₹1,20,77,466 in cash. Pre-shipment loan fully closed. HDFC owns the full invoice worth ₹2,47,50,000.
+**Result:** Bharat Stampings receives ₹1,20,77,466 / $131,277 in cash. Pre-shipment loan fully closed. HDFC owns the full invoice worth ₹2,47,50,000 / $269,022.
 
 ---
 
@@ -326,13 +328,13 @@ Opens: Payments → Create Escrow.
 
 Fills:
 - Linked asset: Invoice BS-INV-2024-1102
-- Amount: ₹2,47,50,000
+- Amount: ₹2,47,50,000 / $269,022
 - Funding model: Prefunded
-- Sole beneficiary: HDFC Bank — ₹2,47,50,000 (platform detects HDFC owns the invoice)
+- Sole beneficiary: HDFC Bank — ₹2,47,50,000 / $269,022 (platform detects HDFC owns the invoice)
 - Expiry: Day 60
 
 Platform runs sanctions screening on escrow parties → clear ✓
-Tata Motors deposits ₹2,47,50,000 from their bank account into the escrow vault.
+Tata Motors deposits ₹2,47,50,000 / $269,022 from their bank account into the escrow vault.
 
 Platform sets **6 release conditions:**
 1. Delivery confirmed
@@ -368,20 +370,20 @@ Gives final approval.
 ### Step 13 — Payment Auto-Released
 
 Platform releases escrow automatically — no manual action needed:
-- HDFC Bank receives ₹2,47,50,000 — full invoice value (they own the invoice)
-- Bharat Stampings receives ₹0 from escrow — already paid in Step 10A
+- HDFC Bank receives ₹2,47,50,000 / $269,022 — full invoice value (they own the invoice)
+- Bharat Stampings receives ₹0 / $0 from escrow — already paid in Step 10A
 
 **HDFC Bank profit recognition:**
-- Paid Bharat Stampings: ₹2,42,55,000 (invoice discounting)
-- Received from escrow: ₹2,47,50,000
-- Profit on discounting: ₹4,95,000
-- Plus interest earned on pre-shipment loan: ₹1,77,534
-- **Total profit on this deal: ₹6,72,534**
+- Paid Bharat Stampings: ₹2,42,55,000 / $263,641 (invoice discounting)
+- Received from escrow: ₹2,47,50,000 / $269,022
+- Profit on discounting: ₹4,95,000 / $5,380
+- Plus interest earned on pre-shipment loan: ₹1,77,534 / $1,930
+- **Total profit on this deal: ₹6,72,534 / $7,310**
 
 Notifications sent:
-- Tata Motors: "Payment of ₹2,47,50,000 released from escrow"
+- Tata Motors: "Payment of ₹2,47,50,000 / $269,022 released from escrow"
 - Bharat Stampings: "Invoice BS-INV-2024-1102 settled"
-- HDFC Bank: "₹2,47,50,000 received — invoice collection complete"
+- HDFC Bank: "₹2,47,50,000 / $269,022 received — invoice collection complete"
 
 **Final statuses:**
 - Escrow → Released
@@ -420,9 +422,9 @@ All tamper-proof. All permanently saved.
 
 | Entity | Paid Out | Received | Net |
 |---|---|---|---|
-| Tata Motors | ₹2,47,50,000 (into escrow) | 9,900 panels worth ₹2,47,50,000 | Even — paid fair value |
-| Bharat Stampings | ₹1,21,77,534 (pre-shipment loan + interest) + ₹4,95,000 (discount cost) | ₹1,20,00,000 (pre-shipment loan) + ₹2,42,55,000 (invoice discounting) | Net ₹2,40,77,466 — sold ₹2.47 cr goods, paid ₹6.72L for financing |
-| HDFC Bank | ₹1,20,00,000 (pre-shipment loan) + ₹2,42,55,000 (invoice discounting) | ₹1,21,77,534 (pre-shipment recovery) + ₹2,47,50,000 (escrow) | ₹6,72,534 profit (₹4.95L discount + ₹1.77L interest) |
+| Tata Motors | ₹2,47,50,000 / $269,022 (into escrow) | 9,900 panels worth ₹2,47,50,000 / $269,022 | Even — paid fair value |
+| Bharat Stampings | ₹1,21,77,534 / $132,365 (pre-shipment loan + interest) + ₹4,95,000 / $5,380 (discount cost) | ₹1,20,00,000 / $130,435 (pre-shipment loan) + ₹2,42,55,000 / $263,641 (invoice discounting) | Net ₹2,40,77,466 / $261,712 — sold ₹2.47 cr / $269,022 goods, paid ₹6.72L / $7,310 for financing |
+| HDFC Bank | ₹1,20,00,000 / $130,435 (pre-shipment loan) + ₹2,42,55,000 / $263,641 (invoice discounting) | ₹1,21,77,534 / $132,365 (pre-shipment recovery) + ₹2,47,50,000 / $269,022 (escrow) | ₹6,72,534 / $7,310 profit (₹4.95L / $5,380 discount + ₹1.77L / $1,930 interest) |
 
 ---
 
@@ -433,7 +435,7 @@ All tamper-proof. All permanently saved.
 | 1 | Rajesh creates PO → Priya approves |
 | 2 | Suresh acknowledges PO |
 | 3 | Kavitha applies for pre-shipment → Amit & Nandita approve |
-| 3A | HDFC offers → Kavitha accepts → ₹1.2 cr disbursed → PO locked |
+| 3A | HDFC offers → Kavitha accepts → ₹1.2 cr / $130,435 disbursed → PO locked |
 | 4 | Production events recorded (linked to finance request) |
 | 5 | Dinesh (SecureStore) issues warehouse receipt |
 | 6 | BlueDart delivers with POD signature |
@@ -442,10 +444,10 @@ All tamper-proof. All permanently saved.
 | 8 | Kavitha raises invoice → 3-way match passes |
 | 9 | Rahul approves → Priya signs off |
 | 10 | Kavitha offers invoice to HDFC → Amit & Nandita approve |
-| 10A | Platform nets pre-shipment loan → Bharat gets ₹1.20 cr → loan closed |
-| 11 | Rajesh creates escrow (beneficiary: HDFC) → funds ₹2.47 cr |
+| 10A | Platform nets pre-shipment loan → Bharat gets ₹1.20 cr / $130,435 → loan closed |
+| 11 | Rajesh creates escrow (beneficiary: HDFC) → funds ₹2.47 cr / $269,022 |
 | 12 | All 6 conditions verified → Priya gives release approval |
-| 13 | HDFC receives ₹2.47 cr → profit ₹6.72L realized |
+| 13 | HDFC receives ₹2.47 cr / $269,022 → profit ₹6.72L / $7,310 realized |
 | 14 | Audit evidence pack permanently available |
 
 ---

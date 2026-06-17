@@ -208,6 +208,8 @@ State transitions MUST be enforced at the chaincode/smart contract layer. Do not
 
 ## 11. Escrow Funding Models & Asset Links
 
+> **Settlement currency (MVP decision):** escrow currently settles in **USD via a USDC/USDT-style ERC-20** on the Polygon Supernet (locally a mock `MockUSDC`), **not INR**. This is a deliberate MVP simplification — USD stablecoins are real and standard, whereas a regulated INR-pegged settlement token is deferred (tied to the future RDM token, §2). The worked example's INR figures carry their USD equivalent in oblique form `₹INR / $USD` at a fixed **1 USD = ₹92**. Production would swap the mock for an INR-pegged regulated token and drop the FX assumption.
+
 From BRD Section 26A. The platform must support all 3 funding models × 5 asset-link types = **15 combinations**. The buyer chooses both when creating the escrow.
 
 ### Funding Models (`funding_model` field)
