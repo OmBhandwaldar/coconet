@@ -328,7 +328,7 @@ Mark each block / ring as `[ ]` `[~]` `[x]` (not started / in progress / done):
 - [x] Block 1 — Foundation
 - [x] Block 2 — Onboarding
 - [x] Block 3 — Trade Docs
-- [ ] Block 4 — Finance
+- [x] Block 4 — Finance
 - [ ] Block 5 — Escrow + Bridge
 - [ ] Block 6 — Wire & Demo
 

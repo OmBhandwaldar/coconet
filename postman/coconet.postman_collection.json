@@ -16,6 +16,9 @@
     { "key": "po_id", "value": "TM-PO-2024-0892" },
     { "key": "grn_id", "value": "TM-GRN-2024-0892" },
     { "key": "invoice_id", "value": "BS-INV-2024-0892" },
+    { "key": "invoice2_id", "value": "BS-INV-2024-1102" },
+    { "key": "pre_fr_id", "value": "FR-PRE-001" },
+    { "key": "disc_fr_id", "value": "FR-DISC-001" },
     { "key": "finance_request_id", "value": "" },
     { "key": "escrow_payment_id", "value": "" }
   ],
@@ -594,6 +597,192 @@
               }
             }
           ]
+        }
+      ]
+    },
+    {
+      "name": "03 — Finance",
+      "item": [
+        {
+          "name": "PRE — create pre-shipment (₹1.2cr on PO)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"request_id\": \"{{pre_fr_id}}\",\n  \"po_id\": \"{{po_id}}\",\n  \"requestor_org_id\": \"{{supplier_id}}\",\n  \"requested_amount\": 12000000,\n  \"lender_id\": \"{{lender_id}}\"\n}" },
+            "url": { "raw": "{{base_url}}/api/finance/pre-shipment", "host": ["{{base_url}}"], "path": ["api", "finance", "pre-shipment"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created (or 502 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 502]));",
+            "if (pm.response.code === 201) { pm.expect(pm.response.json().data.status).to.eql('Requested'); }"
+          ] } }]
+        },
+        {
+          "name": "PRE — validate eligibility (Rule-01 cross-read + Rule-02)",
+          "request": {
+            "method": "PUT", "header": [],
+            "url": { "raw": "{{base_url}}/api/finance/{{pre_fr_id}}/validate-eligibility", "host": ["{{base_url}}"], "path": ["api", "finance", "{{pre_fr_id}}", "validate-eligibility"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502 if already past)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+            "if (pm.response.code === 200) { pm.expect(pm.response.json().data.eligibility.passed).to.eql(true); }"
+          ] } }]
+        },
+        {
+          "name": "PRE — submit quote (12% / 45d)",
+          "request": {
+            "method": "PUT", "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"advance_rate\": 0.48, \"interest_rate\": 0.12, \"tenor_days\": 45 }" },
+            "url": { "raw": "{{base_url}}/api/finance/{{pre_fr_id}}/quote", "host": ["{{base_url}}"], "path": ["api", "finance", "{{pre_fr_id}}", "quote"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));"
+          ] } }]
+        },
+        {
+          "name": "PRE — approve (₹1.2cr)",
+          "request": {
+            "method": "PUT", "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"approved_amount\": 12000000 }" },
+            "url": { "raw": "{{base_url}}/api/finance/{{pre_fr_id}}/approve", "host": ["{{base_url}}"], "path": ["api", "finance", "{{pre_fr_id}}", "approve"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));"
+          ] } }]
+        },
+        {
+          "name": "PRE — accept (locks PO via cross-invoke)",
+          "request": {
+            "method": "PUT", "header": [],
+            "url": { "raw": "{{base_url}}/api/finance/{{pre_fr_id}}/accept", "host": ["{{base_url}}"], "path": ["api", "finance", "{{pre_fr_id}}", "accept"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502 if already accepted)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+            "if (pm.response.code === 200) { pm.expect(pm.response.json().data.security_interest_state).to.eql('Perfected'); }"
+          ] } }]
+        },
+        {
+          "name": "PRE — disburse (₹1.2cr)",
+          "request": {
+            "method": "PUT", "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"disbursement_ref\": \"NEFT-PRE-001\" }" },
+            "url": { "raw": "{{base_url}}/api/finance/{{pre_fr_id}}/disburse", "host": ["{{base_url}}"], "path": ["api", "finance", "{{pre_fr_id}}", "disburse"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502 if already disbursed/repaid)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));"
+          ] } }]
+        },
+        {
+          "name": "INV1102 — submit (₹2,47,50,000 / 9900u)",
+          "request": {
+            "method": "POST", "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"invoice_id\": \"{{invoice2_id}}\",\n  \"supplier_id\": \"{{supplier_id}}\",\n  \"buyer_id\": \"{{buyer_id}}\",\n  \"po_id\": \"{{po_id}}\",\n  \"grn_id\": \"{{grn_id}}\",\n  \"amount\": 24750000,\n  \"quantity\": 9900,\n  \"currency\": \"INR\",\n  \"due_date\": \"2024-12-31\",\n  \"doc_hash\": \"inv-hash-1102\"\n}" },
+            "url": { "raw": "{{base_url}}/api/trade-docs/invoices", "host": ["{{base_url}}"], "path": ["api", "trade-docs", "invoices"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created (or 502 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 502]));"
+          ] } }]
+        },
+        {
+          "name": "INV1102 — run 3-way match",
+          "request": {
+            "method": "PUT", "header": [],
+            "url": { "raw": "{{base_url}}/api/trade-docs/invoices/{{invoice2_id}}/match", "host": ["{{base_url}}"], "path": ["api", "trade-docs", "invoices", "{{invoice2_id}}", "match"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));"
+          ] } }]
+        },
+        {
+          "name": "INV1102 — approve",
+          "request": {
+            "method": "PUT", "header": [],
+            "url": { "raw": "{{base_url}}/api/trade-docs/invoices/{{invoice2_id}}/approve", "host": ["{{base_url}}"], "path": ["api", "trade-docs", "invoices", "{{invoice2_id}}", "approve"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));"
+          ] } }]
+        },
+        {
+          "name": "DISC — create invoice discounting (2%)",
+          "request": {
+            "method": "POST", "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"request_id\": \"{{disc_fr_id}}\",\n  \"invoice_id\": \"{{invoice2_id}}\",\n  \"requestor_org_id\": \"{{supplier_id}}\",\n  \"requested_amount\": 24255000,\n  \"lender_id\": \"{{lender_id}}\",\n  \"discount_rate\": 0.02\n}" },
+            "url": { "raw": "{{base_url}}/api/finance/invoice-discounting", "host": ["{{base_url}}"], "path": ["api", "finance", "invoice-discounting"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('201 Created (or 502 if exists)', () => pm.expect(pm.response.code).to.be.oneOf([201, 502]));"
+          ] } }]
+        },
+        {
+          "name": "DISC — validate eligibility",
+          "request": {
+            "method": "PUT", "header": [],
+            "url": { "raw": "{{base_url}}/api/finance/{{disc_fr_id}}/validate-eligibility", "host": ["{{base_url}}"], "path": ["api", "finance", "{{disc_fr_id}}", "validate-eligibility"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+            "if (pm.response.code === 200) { pm.expect(pm.response.json().data.eligibility.checks.three_way_match_passed).to.eql(true); }"
+          ] } }]
+        },
+        {
+          "name": "DISC — quote (2%)",
+          "request": {
+            "method": "PUT", "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"discount_rate\": 0.02 }" },
+            "url": { "raw": "{{base_url}}/api/finance/{{disc_fr_id}}/quote", "host": ["{{base_url}}"], "path": ["api", "finance", "{{disc_fr_id}}", "quote"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));"
+          ] } }]
+        },
+        {
+          "name": "DISC — accept (assigns invoice via cross-invoke)",
+          "request": {
+            "method": "PUT", "header": [],
+            "url": { "raw": "{{base_url}}/api/finance/{{disc_fr_id}}/accept", "host": ["{{base_url}}"], "path": ["api", "finance", "{{disc_fr_id}}", "accept"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));"
+          ] } }]
+        },
+        {
+          "name": "DISC — disburse with NET SETTLEMENT",
+          "request": {
+            "method": "PUT", "header": [{ "key": "content-type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{ \"disbursement_ref\": \"NEFT-DISC-001\", \"pre_shipment_request_id\": \"{{pre_fr_id}}\" }" },
+            "url": { "raw": "{{base_url}}/api/finance/{{disc_fr_id}}/disburse", "host": ["{{base_url}}"], "path": ["api", "finance", "{{disc_fr_id}}", "disburse"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 (or 502 if already settled)', () => pm.expect(pm.response.code).to.be.oneOf([200, 502]));",
+            "if (pm.response.code === 200) {",
+            "  const s = pm.response.json().data.settlement;",
+            "  pm.test('net to supplier = 1,20,77,466', () => pm.expect(s.net_to_supplier).to.eql(12077466));",
+            "  pm.test('settled = 1,21,77,534', () => pm.expect(s.settled_amount).to.eql(12177534));",
+            "}"
+          ] } }]
+        },
+        {
+          "name": "VERIFY — pre-shipment FR Repaid + lien Released",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/api/finance/{{pre_fr_id}}", "host": ["{{base_url}}"], "path": ["api", "finance", "{{pre_fr_id}}"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('status Repaid', () => pm.expect(pm.response.json().data.status).to.eql('Repaid'));",
+            "pm.test('lien Released', () => pm.expect(pm.response.json().data.security_interest_state).to.eql('Released'));"
+          ] } }]
+        },
+        {
+          "name": "VERIFY — discounting net_disbursed + invoice Assigned",
+          "request": {
+            "method": "GET", "header": [],
+            "url": { "raw": "{{base_url}}/api/finance/{{disc_fr_id}}", "host": ["{{base_url}}"], "path": ["api", "finance", "{{disc_fr_id}}"] }
+          },
+          "event": [{ "listen": "test", "script": { "type": "text/javascript", "exec": [
+            "pm.test('200 OK', () => pm.response.to.have.status(200));",
+            "pm.test('net_disbursed = 1,20,77,466', () => pm.expect(pm.response.json().data.net_disbursed).to.eql(12077466));"
+          ] } }]
         }
       ]
     }
