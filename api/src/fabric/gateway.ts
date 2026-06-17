@@ -58,6 +58,14 @@ export function getContract(chaincodeName: string): Contract {
   return network.getContract(chaincodeName);
 }
 
+// Async-iterable stream of chaincode events (used by the bridge). Starts from the
+// next block, so only events emitted after subscription are delivered.
+export async function getChaincodeEvents(chaincodeName: string) {
+  if (!gateway) throw new Error('Fabric Gateway not connected. Call connectGateway() first.');
+  const network = gateway.getNetwork(env.FABRIC_CHANNEL_NAME);
+  return network.getChaincodeEvents(chaincodeName);
+}
+
 export async function disconnectGateway(): Promise<void> {
   gateway?.close();
   grpcClient?.close();

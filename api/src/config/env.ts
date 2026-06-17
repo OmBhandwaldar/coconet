@@ -47,6 +47,7 @@ const schema = z.object({
   POLYGON_PRIVATE_KEY: z.string(),
   ESCROW_FACTORY_ADDRESS: z.string().default(''),
   ESCROW_VAULT_ADDRESS: z.string().default(''),
+  USDC_ADDRESS: z.string().default(''),
 
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN: z.string().default('8h'),

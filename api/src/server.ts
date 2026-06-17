@@ -3,6 +3,7 @@ import { logger } from './config/logger.js';
 import app from './app.js';
 import { connectGateway, disconnectGateway } from './fabric/gateway.js';
 import { connectPolygon } from './polygon/provider.js';
+import { startBridge } from './services/bridge.service.js';
 
 async function tryConnectFabric(): Promise<boolean> {
   try {
@@ -34,6 +35,15 @@ async function tryConnectPolygon(): Promise<boolean> {
 
 async function bootstrap(): Promise<void> {
   const [fabricOk, polygonOk] = await Promise.all([tryConnectFabric(), tryConnectPolygon()]);
+
+  // Cross-chain bridge needs both chains; skip if either is down (API still serves).
+  if (fabricOk && polygonOk && env.ESCROW_VAULT_ADDRESS) {
+    try {
+      startBridge();
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, 'Bridge failed to start');
+    }
+  }
 
   const server = app.listen(env.PORT, () => {
     logger.info(
