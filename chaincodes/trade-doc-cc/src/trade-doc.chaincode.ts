@@ -61,6 +61,8 @@ export interface Invoice {
   doc_hash: string;
   status: InvoiceStatus;
   match_result?: MatchResult;
+  assignment_status: 'Unassigned' | 'Assigned';
+  assigned_to?: string;
   created_at: string;
   updated_at: string;
 }
@@ -80,7 +82,7 @@ const INVOICE_TRANSITIONS: Record<InvoiceStatus, InvoiceStatus[]> = {
   Draft: ['Submitted'],
   Submitted: ['Matched', 'Disputed', 'Closed'],
   Matched: ['Approved', 'Disputed', 'Closed'],
-  Approved: ['Eligible', 'Disputed', 'Closed'],
+  Approved: ['Eligible', 'Assigned', 'Disputed', 'Closed'],
   Eligible: ['Assigned', 'Disputed', 'Closed'],
   Assigned: ['Settled', 'Disputed', 'Closed'],
   Settled: ['Closed'],
@@ -287,6 +289,7 @@ export class TradeDocChaincode extends Contract {
       due_date: input.due_date,
       doc_hash: input.doc_hash,
       status: 'Submitted',
+      assignment_status: 'Unassigned',
       created_at: now,
       updated_at: now,
     };
@@ -383,6 +386,25 @@ export class TradeDocChaincode extends Contract {
     invoice.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
     ctx.stub.setEvent('InvoiceDisputed', Buffer.from(JSON.stringify({ invoice_id: invoiceId, reason: reason ?? '' })));
+    return JSON.stringify(invoice);
+  }
+
+  // Assign an approved invoice to a lender (invoice discounting / receivables finance).
+  // Called cross-chaincode by finance-cc on lock, or directly. Locks against further assignment.
+  @Transaction()
+  async assignInvoice(ctx: Context, invoiceId: string, lenderId: string): Promise<string> {
+    if (!lenderId) throw new Error('lenderId is required');
+    const invoice = await this.getInvoiceState(ctx, invoiceId);
+    if (invoice.assignment_status === 'Assigned') {
+      throw new Error(`Invoice ${invoiceId} is already assigned to ${invoice.assigned_to}`);
+    }
+    this.assertInvoiceTransition(invoice.status, 'Assigned');
+    invoice.status = 'Assigned';
+    invoice.assignment_status = 'Assigned';
+    invoice.assigned_to = lenderId;
+    invoice.updated_at = this.txTimestamp(ctx);
+    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    ctx.stub.setEvent('InvoiceAssigned', Buffer.from(JSON.stringify({ invoice_id: invoiceId, assigned_to: lenderId })));
     return JSON.stringify(invoice);
   }
 

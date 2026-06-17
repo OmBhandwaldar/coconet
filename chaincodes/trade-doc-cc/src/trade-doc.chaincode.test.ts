@@ -240,4 +240,36 @@ describe('TradeDocChaincode', () => {
       expect(inv.status).to.equal('Closed');
     });
   });
+
+  describe('assignInvoice', () => {
+    async function approvedInvoice(ctx: any) {
+      await seedPoAndGrn(ctx);
+      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await cc.runThreeWayMatch(ctx, validInvoice.invoice_id);
+      await cc.approveInvoice(ctx, validInvoice.invoice_id);
+    }
+
+    it('assigns an Approved invoice to a lender', async () => {
+      const ctx = makeCtx({});
+      await approvedInvoice(ctx);
+      const inv = JSON.parse(await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001'));
+      expect(inv.status).to.equal('Assigned');
+      expect(inv.assignment_status).to.equal('Assigned');
+      expect(inv.assigned_to).to.equal('hdfc-001');
+    });
+
+    it('rejects a second assignment (locked against further assignment)', async () => {
+      const ctx = makeCtx({});
+      await approvedInvoice(ctx);
+      await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001');
+      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'icici-001')).to.be.rejectedWith(/already assigned/);
+    });
+
+    it('rejects assigning a Submitted (unapproved) invoice', async () => {
+      const ctx = makeCtx({});
+      await seedPoAndGrn(ctx);
+      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001')).to.be.rejectedWith(/Illegal invoice transition/);
+    });
+  });
 });
