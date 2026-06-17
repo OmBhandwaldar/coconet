@@ -382,7 +382,7 @@ function inferWhatsNext() {
     return [
       `### 1. MVP demo verified — confirm 14-step Tata/Bharat/HDFC flow runs green`,
       `   - All Postman steps pass`,
-      `   - Jest integration test green against live Fabric + Polygon`,
+      `   - Vitest integration test green against live Fabric + Polygon`,
       ``,
       `### 2. Start Ring 1 — real \`audit-cc\` (target ~1–2 weeks)`,
       `   a. \`audit-cc\` chaincode with \`logEvent\` properly stored on chain`,
@@ -402,7 +402,7 @@ function inferWhatsNext() {
       ``,
       `### 2. Start Block 6 — wire & demo (target ~2 weeks)`,
       `   a. Postman collection covering all 14 steps of the Tata/Bharat/HDFC flow`,
-      `   b. Jest integration test that runs the full flow against live Fabric + Polygon`,
+      `   b. Vitest integration test that runs the full flow against live Fabric + Polygon`,
       `   c. README — \`docker compose up && npm run demo\` one-command setup`,
       `   d. Add Hyperledger Explorer + Blockscout to docker-compose for visual demo`,
     ];
