@@ -8,6 +8,7 @@ const router = Router();
 router.post('/instructions', validate(createInstructionSchema), controller.createInstruction);
 router.get('/instructions/:id', validate(escrowIdParamSchema), controller.get);
 router.post('/instructions/:id/fund', validate(escrowIdParamSchema), controller.fund);
+router.post('/instructions/:id/refund', validate(escrowIdParamSchema), controller.refund);
 router.get('/instructions/:id/status', validate(escrowIdParamSchema), controller.status);
 
 export default router;

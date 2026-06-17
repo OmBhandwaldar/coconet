@@ -7,6 +7,7 @@ import { getSigner } from './provider.js';
 const FACTORY_ABI = [
   'function createEscrowInstruction(bytes32 escrowPaymentId, address buyer, address beneficiary, address token, uint256 amount, string linkedAssetId, uint256 expiryAt)',
   'function getEscrowInstruction(bytes32 escrowPaymentId) view returns (tuple(bytes32 escrowPaymentId, address buyer, address beneficiary, address token, uint256 amount, string linkedAssetId, uint256 expiryAt, bool exists))',
+  'event EscrowInstructionCreated(bytes32 indexed escrowPaymentId, address indexed beneficiary, uint256 amount, string linkedAssetId)',
 ];
 
 const VAULT_ABI = [

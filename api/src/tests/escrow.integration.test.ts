@@ -22,6 +22,7 @@ vi.mock('../polygon/escrow.client.js', () => ({
   vaultContract: () => ({
     getEscrow: async () => escrowStruct,
     fundEscrow: async () => tx,
+    refund: async () => tx,
   }),
   usdcContract: () => ({
     approve: async () => tx,
@@ -72,6 +73,11 @@ describe('escrow lifecycle routes', () => {
 
   it('POST fund returns 200', async () => {
     const res = await request.post('/api/escrow/instructions/ESC-TEST-01/fund');
+    expect(res.status).toBe(200);
+  });
+
+  it('POST refund returns 200 (Rule-0C)', async () => {
+    const res = await request.post('/api/escrow/instructions/ESC-TEST-01/refund');
     expect(res.status).toBe(200);
   });
 

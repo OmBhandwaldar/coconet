@@ -22,6 +22,13 @@ export async function fund(req: Request, res: Response, next: NextFunction): Pro
   } catch (err) { next(err); }
 }
 
+export async function refund(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const escrow = await service.refund(req.params.id);
+    res.json({ success: true, data: escrow, correlationId: req.correlationId });
+  } catch (err) { next(err); }
+}
+
 export async function status(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const escrow = await service.getEscrow(req.params.id);

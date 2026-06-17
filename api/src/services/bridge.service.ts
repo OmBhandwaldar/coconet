@@ -1,8 +1,8 @@
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 import { getChaincodeEvents } from '../fabric/gateway.js';
-import { vaultContract } from '../polygon/escrow.client.js';
-import { escrowForInvoice, escrowIdBytes } from './escrow.service.js';
+import { factoryContract, vaultContract } from '../polygon/escrow.client.js';
+import { escrowIdForInvoice, linkInvoiceToEscrow, rebuildInvoiceLinks } from './escrow.service.js';
 
 // The Fabric↔Polygon bridge. Correlation key: escrowPaymentId.
 //   Fabric → Polygon: trade-doc-cc 'InvoiceApproved' → flip the Polygon condition → auto-release.
@@ -12,9 +12,25 @@ let started = false;
 export function startBridge(): void {
   if (started) return;
   started = true;
+  void initLinks();
   void watchFabricInvoiceApproved();
   watchPolygonReleases();
   logger.info('Bridge service started (Fabric↔Polygon)');
+}
+
+// Restart-safe correlation: rebuild invoice→escrow links from chain, then keep
+// the map live by subscribing to new EscrowInstructionCreated events.
+async function initLinks(): Promise<void> {
+  try {
+    const n = await rebuildInvoiceLinks();
+    logger.info({ links: n }, 'Bridge: rebuilt invoice→escrow links from chain');
+    factoryContract().on('EscrowInstructionCreated', (escrowPaymentId: string, _beneficiary: string, _amount: bigint, linkedAssetId: string) => {
+      linkInvoiceToEscrow(linkedAssetId, escrowPaymentId);
+      logger.debug({ linkedAssetId, escrowPaymentId }, 'Bridge: linked new escrow instruction');
+    });
+  } catch (err) {
+    logger.warn({ reason: (err as Error).message }, 'Bridge: could not initialise escrow links');
+  }
 }
 
 // ─── Fabric → Polygon ─────────────────────────────────────────────────────────
@@ -26,12 +42,12 @@ async function watchFabricInvoiceApproved(): Promise<void> {
       try {
         const payload = JSON.parse(Buffer.from(event.payload).toString());
         const invoiceId: string = payload.invoice_id;
-        const escrowLabel = escrowForInvoice(invoiceId);
-        if (!escrowLabel) {
+        const escrowId = escrowIdForInvoice(invoiceId);
+        if (!escrowId) {
           logger.debug({ invoiceId }, 'Bridge: InvoiceApproved with no linked escrow — ignoring');
           continue;
         }
-        await handleInvoiceApproved(escrowLabel, invoiceId);
+        await handleInvoiceApproved(escrowId, invoiceId);
       } catch (err) {
         logger.error({ err: (err as Error).message }, 'Bridge: failed handling InvoiceApproved');
       }
@@ -42,20 +58,20 @@ async function watchFabricInvoiceApproved(): Promise<void> {
 }
 
 // Flip the invoiceApproved condition on Polygon, then release if all conditions hold.
-export async function handleInvoiceApproved(escrowLabel: string, invoiceId: string): Promise<void> {
-  const idB = escrowIdBytes(escrowLabel);
+// escrowId is the bytes32 escrowPaymentId.
+export async function handleInvoiceApproved(escrowId: string, invoiceId: string): Promise<void> {
   const vault = vaultContract();
 
-  await (await vault.markInvoiceApproved(idB)).wait();
-  logger.info({ escrowLabel, invoiceId }, 'Bridge: marked invoiceApproved on Polygon escrow');
+  await (await vault.markInvoiceApproved(escrowId)).wait();
+  logger.info({ escrowId, invoiceId }, 'Bridge: marked invoiceApproved on Polygon escrow');
 
-  const e = await vault.getEscrow(idB);
+  const e = await vault.getEscrow(escrowId);
   // status 2 == Funded; release needs funded + invoiceApproved (Rule-0A + Rule-0B).
   if (Number(e.status) === 2 && e.funded && e.invoiceApproved) {
-    await (await vault.release(idB)).wait();
-    logger.info({ escrowLabel }, 'Bridge: all conditions met → escrow released');
+    await (await vault.release(escrowId)).wait();
+    logger.info({ escrowId }, 'Bridge: all conditions met → escrow released');
   } else {
-    logger.info({ escrowLabel, status: Number(e.status), funded: e.funded }, 'Bridge: conditions not yet complete — awaiting funding');
+    logger.info({ escrowId, status: Number(e.status), funded: e.funded }, 'Bridge: conditions not yet complete — awaiting funding');
   }
 }
 

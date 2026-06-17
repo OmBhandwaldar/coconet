@@ -27,18 +27,37 @@ export interface CreateInstructionInput {
   expiry_at?: number;
 }
 
-// In-memory invoice → escrow link, used by the bridge to correlate Fabric
-// InvoiceApproved events to a Polygon escrow. Rebuilt on each createInstruction;
-// for durability a production build would persist this (Mongo / on-chain index).
-const invoiceToEscrow = new Map<string, string>();
+// invoiceId → escrowPaymentId (bytes32). Used by the bridge to correlate a Fabric
+// InvoiceApproved event to a Polygon escrow. The chain is the source of truth:
+// rebuilt from the factory's EscrowInstructionCreated events on bridge start and
+// kept live, so the correlation survives API restarts (no separate datastore).
+const invoiceToEscrowId = new Map<string, string>();
 
-export function escrowForInvoice(invoiceId: string): string | undefined {
-  return invoiceToEscrow.get(invoiceId);
+export function escrowIdForInvoice(invoiceId: string): string | undefined {
+  return invoiceToEscrowId.get(invoiceId);
+}
+
+export function linkInvoiceToEscrow(invoiceId: string, escrowId: string): void {
+  invoiceToEscrowId.set(invoiceId, escrowId);
 }
 
 // bytes32 escrowPaymentId derived deterministically from the human label.
 export function escrowIdBytes(label: string): string {
   return keccakId(label);
+}
+
+// Rebuild invoice→escrow links from the factory's past EscrowInstructionCreated
+// events (restart-safe; chain is authoritative). Returns the number of links loaded.
+export async function rebuildInvoiceLinks(): Promise<number> {
+  const events = await factoryContract().queryFilter('EscrowInstructionCreated');
+  let n = 0;
+  for (const ev of events) {
+    const args = (ev as { args?: { linkedAssetId: string; escrowPaymentId: string } }).args;
+    if (!args) continue;
+    invoiceToEscrowId.set(args.linkedAssetId, args.escrowPaymentId);
+    n++;
+  }
+  return n;
 }
 
 export async function createInstruction(input: CreateInstructionInput): Promise<EscrowView> {
@@ -52,7 +71,7 @@ export async function createInstruction(input: CreateInstructionInput): Promise<
   );
   await tx.wait();
 
-  invoiceToEscrow.set(input.linked_invoice_id, input.escrow_payment_id);
+  linkInvoiceToEscrow(input.linked_invoice_id, idB);
   return getEscrow(input.escrow_payment_id);
 }
 
@@ -63,6 +82,12 @@ export async function fund(escrowPaymentId: string): Promise<EscrowView> {
 
   await (await usdcContract().approve(env.ESCROW_VAULT_ADDRESS, amount)).wait();
   await (await vaultContract().fundEscrow(idB)).wait();
+  return getEscrow(escrowPaymentId);
+}
+
+// Rule-0C: refund the buyer before release (cancel / dispute priority).
+export async function refund(escrowPaymentId: string): Promise<EscrowView> {
+  await (await vaultContract().refund(escrowIdBytes(escrowPaymentId))).wait();
   return getEscrow(escrowPaymentId);
 }
 
