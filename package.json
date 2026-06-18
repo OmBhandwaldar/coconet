@@ -14,7 +14,9 @@
     "test:watch": "npm run test:watch --workspace=api",
     "typecheck": "npm run typecheck --workspace=api",
     "lint": "eslint . --ext .ts",
-    "demo": "npm run dev"
+    "seed": "npm run seed --workspace=@coconet/api",
+    "demo": "tsx scripts/demo.ts",
+    "demo:reset": "bash scripts/demo-reset.sh"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
