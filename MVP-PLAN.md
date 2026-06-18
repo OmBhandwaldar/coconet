@@ -353,3 +353,44 @@ Mark each block / ring as `[ ]` `[~]` `[x]` (not started / in progress / done):
 - [PLAN.md](PLAN.md) — Full BRD spec (unchanged; the *what*)
 - [CLAUDE.md](CLAUDE.md) — Project context for Claude Code
 - BRD/SRS v1.1 (12 April 2026) — Authoritative requirements
+
+---
+
+## 9. Decisions Log (MVP build)
+
+Key implementation decisions taken while building Blocks 3–5 (as of 2026-06-18). Each notes
+*what* was decided and *why*, with what was deferred. Deferrals point to the ring that owns the
+full version.
+
+### Cross-cutting / environment (Mac + Node 24)
+- **Network scripts ported PowerShell → bash** (`scripts/*.sh`); `.ps1` kept as Windows reference. The dev machine is macOS now.
+- **Chaincode test runner uses `tsx`, not `ts-node`** (`mocha --node-option import=tsx`). ts-node 10.9.2's CJS hook doesn't intercept on Node 23/24; tsx does.
+- **Chaincode tsconfig → `node16` module + resolution** (dropped deprecated `node10`). Emit stays CommonJS (`type: commonjs`), so deployed behaviour is unchanged.
+- **Removed unused path aliases** from `api/tsconfig.json` + `vitest.config.ts`; **deleted root `tsconfig.json`** (workspace root owns no source). Aliases were a latent prod-build trap.
+- **`MINIO_USE_SSL` parsed explicitly** in `env.ts` (`z.coerce.boolean()` turns `"false"` into `true`).
+- **Verification discipline:** "tested" = state read back from the source of truth (`peer chaincode query` for Fabric, `balanceOf`/`getEscrow` via ethers for Polygon), never the API response alone. vitest API tests mock the chain and prove wiring only.
+
+### Block 3 — Trade Documents
+- **One combined `trade-doc-cc` contract** (PO + GRN + Invoice + 3-way match), mirroring onboarding-cc. 3-way match reads all three in one tx — avoids cross-contract reads.
+- **MinIO document upload included now**; SHA-256 fingerprint on-chain (FR-DOC-02), raw doc in MinIO.
+- **GRN minimal** (create + accept only); inspection sub-states deferred.
+- **PO created directly as `Issued`**; maker-checker is storage-only until Ring 11.
+
+### Block 4 — Finance (pre-shipment + invoice discounting)
+- **Rule-01 enforced via cross-chaincode read**: `finance-cc` calls `invokeChaincode('trade-doc-cc', getInvoice/getPurchaseOrder)` to verify status on-chain (not trusting API-passed data).
+- **Rule-02 lock = finance-cc owns the lien + atomic cross-invoke**: `acceptOffer` writes `LOCK:<asset>` AND cross-invokes `trade-doc-cc` (`lockPO` / `assignInvoice`) in one tx, so the lien and the asset status commit together.
+- **Net-settlement math in the API service layer** (per plan), not the chaincode; chaincode records the resulting gross/net/repayment.
+- **Interest accrues over the agreed tenor** (deterministic for the demo: principal × rate × tenor/365), not wall-clock elapsed. Matches the example to the rupee (net ₹1,20,77,466).
+- **Financing terms on the main channel** for now; `financingTermsPDC` deferred to Ring 4.
+
+### Block 5 — Escrow + Bridge (Polygon)
+- **Chain = Polygon CDK Supernet**; local dev = the Hardhat node (`coconet-hardhat`, chainId 31337).
+- **Settlement asset = USD via a mock USDC ERC-20 (6 decimals)** — a deliberate MVP simplification. Production uses an INR-pegged regulated token (the deferred RDM token). **FX fixed at 1 USD = ₹92**; EXAMPLE-FLOW annotated `₹INR / $USD`. (Documented in CLAUDE.md §11.)
+- **Single shared `EscrowVault`** keyed by `escrowPaymentId` (`mapping(bytes32 => Escrow)`), not a clone-per-escrow factory.
+- **Real ERC-20 value transfer** on Hardhat (ReentrancyGuard + checks-effects-interactions).
+- **Event-driven bridge auto-release**: escrow funded with `invoiceApproved=false`; the bridge catches the Fabric `InvoiceApproved` event, flips the Polygon condition, and auto-releases. Truly exercises the Fabric→Polygon seam.
+- **2 of 6 release conditions inline** (funded — Rule-0A; invoiceApproved — Rule-0B). Delivery, sanctions, senior approval, no-dispute deferred — the full `ReleaseConditionEvaluator` is Ring 7, with sources in `dispute-cc` (Ring 3) and maker-checker/Fabric-CA (Ring 11). The 2-condition slice proves the *mechanism*; adding the rest as inline booleans now would be false completeness without their source chaincodes.
+- **Single platform signer for all Polygon tx**, wrapped in a shared `NonceManager` (sequential nonces). Per-org EVM wallets deferred to Ring 11.
+- **Bridge invoice→escrow correlation rebuilt from chain** (`EscrowInstructionCreated` events) on start + kept live via subscription — restart-safe, no separate datastore (chain is source of truth).
+- **`audit-cc` stubbed** (Ring 1): Polygon `FundsReleased` → logged audit placeholder.
+- **Refund (Rule-0C) added via API** as the cancel path; full dispute/hold lifecycle is Ring 3.
