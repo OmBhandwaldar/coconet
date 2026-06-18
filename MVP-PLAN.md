@@ -330,7 +330,7 @@ Mark each block / ring as `[ ]` `[~]` `[x]` (not started / in progress / done):
 - [x] Block 3 — Trade Docs
 - [x] Block 4 — Finance
 - [x] Block 5 — Escrow + Bridge
-- [ ] Block 6 — Wire & Demo
+- [x] Block 6 — Wire & Demo  ← **MVP COMPLETE**
 
 ### Expansion Rings
 - [ ] Ring 1 — Audit
