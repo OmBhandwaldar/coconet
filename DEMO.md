@@ -25,6 +25,7 @@ pass. Re-runnable without reset (unique run-id each time).
 | 10–10A | HDFC discounts the invoice; **net settlement** auto-repays the pre-shipment loan → Bharat nets ₹1,20,77,466 / $131,277; invoice assigned to HDFC | Fabric `finance-cc` (service computes net) |
 | 11 | Tata creates an escrow to HDFC and **funds $269,022 USDC** into the vault | Polygon `EscrowFactory`/`EscrowVault` |
 | 12–13 | Tata approves the escrow's invoice on Fabric → **the bridge flips the Polygon condition → escrow auto-releases $269,022 to HDFC** | **Fabric → bridge → Polygon** |
+| Sad path | A second escrow is funded, then **refunded to the buyer before release** ($50,000 returned) — Rule-0C | Polygon `EscrowVault.refund` |
 
 ## The moment to highlight
 
@@ -62,7 +63,8 @@ story but **not executed** (deferred to the rings noted in MVP-PLAN.md):
 
 - Steps 4–6 — production/provenance, warehouse receipt, dispatch/delivery → **Ring 2**.
 - Step 7A — rejected-goods handling → simplified (GRN accepts the full quantity).
-- Disputes / hold → **Ring 3**.
+- Refund (Rule-0C cancel-before-release) **is demoed** (sad path above); the full dispute
+  lifecycle that would *trigger* a hold/refund (raise → respond → resolve) → **Ring 3**.
 - Escrow release checks 2 of 6 conditions (funded + invoice-approved); the other 4 (delivery,
   sanctions, senior approval, no-dispute) → **Rings 7 / 10 / 11 / 3**.
 - Full audit evidence pack (step 14) → **Ring 1** (`audit-cc`; today the bridge logs a stub).

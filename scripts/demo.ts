@@ -63,7 +63,7 @@ async function main() {
   await ensureOrg('hdfc-001', { org_id: 'hdfc-001', legal_name: 'HDFC Bank Ltd', org_type: 'Lender', msp_id: 'LenderMSP', registration_number: 'L65920MH1994PLC080618', gstin: '27AAACH2702H1Z9', pan: 'AAACH2702H', country: 'IN', contact_email: 'tradefinance@hdfcbank.com', registered_address: 'HDFC Bank House, Mumbai 400013' });
   ok('3 orgs ready (Approved)');
 
-  const PO = id('PO'), GRN = id('GRN'), INV = id('INV');
+  const PO = id('PO'), GRN = id('GRN');
   const FRPRE = id('FRPRE'), INVD = id('INVD'), FRDISC = id('FRDISC');
   const INVE = id('INVE'), ESC = id('ESC');
 
@@ -121,6 +121,15 @@ async function main() {
   }
   released || fail('escrow did not auto-release within 40s');
   ok('bridge flipped condition on Polygon → escrow auto-RELEASED to HDFC ($269,022)');
+
+  head('Sad path — escrow refunded to buyer before release (Rule-0C)');
+  const ESCR = id('ESCR');
+  await expectOk('POST', '/api/escrow/instructions', { escrow_payment_id: ESCR, buyer_org_id: 'tata-001', beneficiary_org_id: 'hdfc-001', linked_invoice_id: id('INVR'), amount_usd: 50000 });
+  const rfunded = await expectOk('POST', `/api/escrow/instructions/${ESCR}/fund`, undefined);
+  rfunded.status === 'Funded' || fail('refund-demo escrow not funded'); ok('a second escrow funded ($50,000 USDC locked)');
+  const refunded = await expectOk('POST', `/api/escrow/instructions/${ESCR}/refund`, undefined);
+  refunded.status === 'Refunded' || fail(`expected Refunded, got ${refunded.status}`);
+  ok('escrow REFUNDED to buyer (Tata) before release — funds returned, not paid out');
 
   console.log('\n\x1b[1m──────────── SETTLEMENT SUMMARY ────────────\x1b[0m');
   console.log(`  Pre-shipment advance to Bharat:  ${inrUsd(12000000)}`);
