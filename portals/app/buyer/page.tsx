@@ -17,10 +17,13 @@ export default function BuyerPage() {
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    setPo(await apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`));
-    setGrn(await apiGet<GRN>(`/api/trade-docs/grn/${ids.grn}`));
-    setInv(await apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`));
-    setEsc(await apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`));
+    const [p, g, i, e] = await Promise.all([
+      apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`),
+      apiGet<GRN>(`/api/trade-docs/grn/${ids.grn}`),
+      apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
+      apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`),
+    ]);
+    setPo(p); setGrn(g); setInv(i); setEsc(e);
   }, [ids]);
 
   useEffect(() => {

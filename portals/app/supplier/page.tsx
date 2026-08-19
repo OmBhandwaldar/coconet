@@ -18,11 +18,14 @@ export default function SupplierPage() {
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    setPo(await apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`));
-    setGrn(await apiGet<GRN>(`/api/trade-docs/grn/${ids.grn}`));
-    setInv(await apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`));
-    setFrPre(await apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`));
-    setFrDisc(await apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`));
+    const [p, g, i, fp, fd] = await Promise.all([
+      apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`),
+      apiGet<GRN>(`/api/trade-docs/grn/${ids.grn}`),
+      apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
+      apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`),
+      apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`),
+    ]);
+    setPo(p); setGrn(g); setInv(i); setFrPre(fp); setFrDisc(fd);
   }, [ids]);
 
   useEffect(() => {

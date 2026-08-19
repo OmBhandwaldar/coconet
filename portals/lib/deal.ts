@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiCall } from './api';
 
 const KEY = 'coconet_deal';
@@ -52,9 +52,14 @@ export function useDeal() {
     setCode(next);
   }
 
+  // Memoize so `ids` keeps a stable reference across renders (only changes when the
+  // deal code changes) — otherwise consumers' useCallback/useEffect deps churn and
+  // the polling loop re-fires every render.
+  const ids = useMemo(() => (code ? idsFor(code) : null), [code]);
+
   return {
     code,
-    ids: code ? idsFor(code) : null,
+    ids,
     setDeal,
     newCode: () => 'D-' + Date.now().toString(36).toUpperCase(),
   };

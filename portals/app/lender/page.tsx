@@ -17,10 +17,13 @@ export default function LenderPage() {
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    setFrPre(await apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`));
-    setFrDisc(await apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`));
-    setInv(await apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`));
-    setEsc(await apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`));
+    const [fp, fd, i, e] = await Promise.all([
+      apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`),
+      apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`),
+      apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
+      apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`),
+    ]);
+    setFrPre(fp); setFrDisc(fd); setInv(i); setEsc(e);
   }, [ids]);
 
   useEffect(() => {
