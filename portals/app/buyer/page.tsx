@@ -6,17 +6,19 @@ import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
-import type { Escrow, Invoice, PurchaseOrder } from '@/lib/types';
+import type { Escrow, GRN, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function BuyerPage() {
   const { code, ids } = useDeal();
   const [po, setPo] = useState<PurchaseOrder | null>(null);
+  const [grn, setGrn] = useState<GRN | null>(null);
   const [inv, setInv] = useState<Invoice | null>(null);
   const [esc, setEsc] = useState<Escrow | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ids) return;
     setPo(await apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`));
+    setGrn(await apiGet<GRN>(`/api/trade-docs/grn/${ids.grn}`));
     setInv(await apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`));
     setEsc(await apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`));
   }, [ids]);
@@ -56,10 +58,10 @@ export default function BuyerPage() {
             })} onDone={refresh} />
         </StepCard>
 
-        <StepCard n={2} title="Record Goods Receipt (GRN)">
+        <StepCard n={2} title="Record Goods Receipt (GRN)" status={grn?.status}>
           Record delivery & accept {AMT.grnQty.toLocaleString('en-IN')} units.
           <ActionButton label="Record & Accept GRN"
-            disabled={!po || (po.status !== 'Acknowledged' && po.status !== 'Locked')}
+            disabled={!!grn || !po || (po.status !== 'Acknowledged' && po.status !== 'Locked')}
             run={() => apiSeq([
               () => apiCall('POST', '/api/trade-docs/grn', { grn_id: ids.grn, po_id: ids.po, received_qty: AMT.grnQty }),
               () => apiCall('PUT', `/api/trade-docs/grn/${ids.grn}/accept`),
