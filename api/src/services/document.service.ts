@@ -39,3 +39,25 @@ export async function verifyDocument(hash: string): Promise<VerifyResult> {
     return { doc_hash: hash, exists: false };
   }
 }
+
+export interface StoredDocument {
+  stream: NodeJS.ReadableStream;
+  contentType: string;
+  size: number;
+}
+
+// Retrieve the raw document bytes for a fingerprint (null if not present).
+export async function getDocument(hash: string): Promise<StoredDocument | null> {
+  await ensureDocumentsBucket();
+  try {
+    const stat = await minioClient.statObject(DOCUMENTS_BUCKET, hash);
+    const stream = await minioClient.getObject(DOCUMENTS_BUCKET, hash);
+    return {
+      stream,
+      contentType: stat.metaData?.['content-type'] ?? 'application/octet-stream',
+      size: stat.size,
+    };
+  } catch {
+    return null;
+  }
+}

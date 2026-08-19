@@ -40,3 +40,27 @@ export async function apiSeq(calls: Array<() => Promise<ApiResult>>): Promise<Ap
 }
 
 export const API_BASE = BASE;
+
+// Upload a real document file → returns its on-chain SHA-256 fingerprint (or null).
+export async function uploadFile(file: File): Promise<string | null> {
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`${BASE}/api/trade-docs/documents/upload`, { method: 'POST', body: fd });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return j?.data?.doc_hash ?? null;
+  } catch {
+    return null;
+  }
+}
+
+// URL to view/download a stored document by its fingerprint.
+export function docUrl(hash: string): string {
+  return `${BASE}/api/trade-docs/documents/${hash}`;
+}
+
+// A real stored file is keyed by a 64-char SHA-256; placeholder hashes are not.
+export function isRealHash(h?: string): boolean {
+  return !!h && /^[0-9a-f]{64}$/.test(h);
+}

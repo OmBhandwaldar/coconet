@@ -133,3 +133,13 @@ export async function verifyDocument(req: Request, res: Response, next: NextFunc
     res.json({ success: true, data: result, correlationId: req.correlationId });
   } catch (err) { next(err); }
 }
+
+export async function getDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const doc = await documents.getDocument(req.params.hash);
+    if (!doc) { res.status(404).json({ success: false, error: { code: 'NOT_FOUND', message: 'Document not found' } }); return; }
+    res.setHeader('Content-Type', doc.contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${req.params.hash}"`);
+    doc.stream.pipe(res);
+  } catch (err) { next(err); }
+}

@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
+import { DocUpload } from '@/components/DocUpload';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
@@ -16,6 +17,7 @@ export default function SupplierPage() {
   const [inv, setInv] = useState<Invoice | null>(null);
   const [frPre, setFrPre] = useState<FinanceRequest | null>(null);
   const [frDisc, setFrDisc] = useState<FinanceRequest | null>(null);
+  const [invDocHash, setInvDocHash] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ids) return;
@@ -73,9 +75,10 @@ export default function SupplierPage() {
 
         <StepCard n={4} title="Raise Invoice" status={inv?.status}>
           Raise the invoice for the accepted quantity ({inrUsd(AMT.invAmount)}); the platform runs the 3-way match.
+          <DocUpload label="Attach invoice document (optional)" disabled={!!inv} onUploaded={(h) => setInvDocHash(h)} />
           <ActionButton label="Raise Invoice + 3-Way Match" disabled={!grn?.accepted_qty || !!inv}
             run={() => apiSeq([
-              () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: AMT.invAmount, quantity: AMT.invQty, currency: 'INR', due_date: '2024-12-31', doc_hash: `inv-${code}` }),
+              () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: AMT.invAmount, quantity: AMT.invQty, currency: 'INR', due_date: '2024-12-31', doc_hash: invDocHash ?? `inv-${code}` }),
               () => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/match`),
             ])} onDone={refresh} />
           <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />

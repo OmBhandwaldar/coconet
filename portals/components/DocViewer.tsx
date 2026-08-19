@@ -1,6 +1,7 @@
 'use client';
 import { ReactNode, useState } from 'react';
 import { inrUsd } from './ui';
+import { docUrl, isRealHash } from '@/lib/api';
 import type { GRN, Invoice, PurchaseOrder } from '@/lib/types';
 
 const ORG_NAME: Record<string, string> = {
@@ -28,11 +29,19 @@ function Stamp({ status }: { status: string }) {
 
 function Hash({ h }: { h?: string }) {
   if (!h) return null;
+  const real = isRealHash(h);
   return (
     <div className="mt-4 rounded bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
       <span className="font-semibold text-slate-600">On-chain fingerprint:</span>{' '}
       <span className="font-mono break-all">{h}</span>
       <span className="ml-1 text-emerald-600">✓ verified</span>
+      {real && (
+        <div className="mt-1">
+          <a href={docUrl(h)} target="_blank" rel="noreferrer" className="font-semibold text-brand hover:underline">
+            Open original file ↗
+          </a>
+        </div>
+      )}
     </div>
   );
 }

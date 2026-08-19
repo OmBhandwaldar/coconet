@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
+import { DocUpload } from '@/components/DocUpload';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
@@ -15,6 +16,7 @@ export default function BuyerPage() {
   const [grn, setGrn] = useState<GRN | null>(null);
   const [inv, setInv] = useState<Invoice | null>(null);
   const [esc, setEsc] = useState<Escrow | null>(null);
+  const [poDocHash, setPoDocHash] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ids) return;
@@ -54,11 +56,13 @@ export default function BuyerPage() {
 
         <StepCard n={1} title="Create Purchase Order" status={po?.status}>
           Order {AMT.poQty.toLocaleString('en-IN')} units — {inrUsd(AMT.poGross)}.
+          <DocUpload label="Attach PO document (optional)" disabled={!!po} onUploaded={(h) => setPoDocHash(h)} />
           <ActionButton label="Create PO" disabled={!!po}
             run={() => apiCall('POST', '/api/trade-docs/purchase-orders', {
               po_id: ids.po, buyer_id: ORG.buyer, supplier_id: ORG.supplier, currency: 'INR',
               gross_value: AMT.poGross, quantity: AMT.poQty, price_per_unit: AMT.poPrice,
-              item_description: 'Steel panels', delivery_terms: '45 days', payment_terms: '30 days', doc_hash: `po-${code}`,
+              item_description: 'Steel panels', delivery_terms: '45 days', payment_terms: '30 days',
+              doc_hash: poDocHash ?? `po-${code}`,
             })} onDone={refresh} />
           <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
         </StepCard>
