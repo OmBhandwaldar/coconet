@@ -5,6 +5,7 @@ import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { DocUpload } from '@/components/DocUpload';
+import { ParseImport } from '@/components/ParseImport';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
@@ -81,6 +82,16 @@ export default function SupplierPage() {
               () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: AMT.invAmount, quantity: AMT.invQty, currency: 'INR', due_date: '2024-12-31', doc_hash: invDocHash ?? `inv-${code}` }),
               () => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/match`),
             ])} onDone={refresh} />
+          <ParseImport
+            label="Parse & import from document"
+            showDueDate
+            disabled={!grn?.accepted_qty || !!inv}
+            defaults={{ amount: AMT.invAmount, quantity: AMT.invQty, due_date: '2024-12-31' }}
+            onSubmit={(c, h) => apiSeq([
+              () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: c.amount, quantity: c.quantity, currency: 'INR', due_date: c.due_date ?? '2024-12-31', doc_hash: h }),
+              () => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/match`),
+            ])}
+            onDone={refresh} />
           <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
         </StepCard>
 

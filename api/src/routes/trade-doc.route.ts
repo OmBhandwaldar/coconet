@@ -41,6 +41,7 @@ router.put('/invoices/:id/dispute', validate(invoiceReasonSchema), controller.di
 
 // ─── Documents ────────────────────────────────────────────────────────────────
 router.post('/documents/upload', upload.single('file'), controller.uploadDocument);
+router.post('/documents/parse', upload.single('file'), controller.parseDocument);
 router.get('/documents/:hash/verify', controller.verifyDocument);
 router.get('/documents/:hash', controller.getDocument);
 

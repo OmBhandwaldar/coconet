@@ -55,6 +55,27 @@ export async function uploadFile(file: File): Promise<string | null> {
   }
 }
 
+export interface ParseResult {
+  doc_hash: string;
+  fields: { amount?: number; quantity?: number; invoice_number?: string; po_number?: string; due_date?: string };
+  found: string[];
+  text_snippet: string;
+}
+
+// Upload a document and extract its fields (self-contained text extraction).
+export async function parseFile(file: File): Promise<ParseResult | null> {
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await fetch(`${BASE}/api/trade-docs/documents/parse`, { method: 'POST', body: fd });
+    if (!res.ok) return null;
+    const j = await res.json();
+    return (j?.data as ParseResult) ?? null;
+  } catch {
+    return null;
+  }
+}
+
 // URL to view/download a stored document by its fingerprint.
 export function docUrl(hash: string): string {
   return `${BASE}/api/trade-docs/documents/${hash}`;

@@ -134,6 +134,14 @@ export async function verifyDocument(req: Request, res: Response, next: NextFunc
   } catch (err) { next(err); }
 }
 
+export async function parseDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    if (!req.file) throw new ValidationError('No file uploaded (expected multipart field "file")');
+    const result = await documents.parseDocument(req.file.buffer, req.file.mimetype);
+    res.json({ success: true, data: result, correlationId: req.correlationId });
+  } catch (err) { next(err); }
+}
+
 export async function getDocument(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const doc = await documents.getDocument(req.params.hash);

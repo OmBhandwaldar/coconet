@@ -5,6 +5,7 @@ import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { DocUpload } from '@/components/DocUpload';
+import { ParseImport } from '@/components/ParseImport';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
@@ -64,6 +65,16 @@ export default function BuyerPage() {
               item_description: 'Steel panels', delivery_terms: '45 days', payment_terms: '30 days',
               doc_hash: poDocHash ?? `po-${code}`,
             })} onDone={refresh} />
+          <ParseImport
+            label="Parse & import from document"
+            disabled={!!po}
+            defaults={{ amount: AMT.poGross, quantity: AMT.poQty }}
+            onSubmit={(c, h) => apiCall('POST', '/api/trade-docs/purchase-orders', {
+              po_id: ids.po, buyer_id: ORG.buyer, supplier_id: ORG.supplier, currency: 'INR',
+              gross_value: c.amount, quantity: c.quantity, price_per_unit: c.quantity ? Math.round(c.amount / c.quantity) : 0,
+              item_description: 'Steel panels', delivery_terms: '45 days', payment_terms: '30 days', doc_hash: h,
+            })}
+            onDone={refresh} />
           <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
         </StepCard>
 
