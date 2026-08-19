@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd } from '@/components/ui';
+import { DocButton } from '@/components/DocViewer';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
@@ -55,6 +56,7 @@ export default function SupplierPage() {
           Accept the buyer&apos;s order ({po ? inrUsd(po.gross_value) : inrUsd(AMT.poGross)}).
           <ActionButton label="Acknowledge PO" disabled={po?.status !== 'Issued'}
             run={() => apiCall('PUT', `/api/trade-docs/purchase-orders/${ids.po}/acknowledge`, { supplier_id: ORG.supplier })} onDone={refresh} />
+          <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
         </StepCard>
 
         <StepCard n={2} title="Request Pre-Shipment Finance" status={frPre?.status}>
@@ -76,6 +78,7 @@ export default function SupplierPage() {
               () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: AMT.invAmount, quantity: AMT.invQty, currency: 'INR', due_date: '2024-12-31', doc_hash: `inv-${code}` }),
               () => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/match`),
             ])} onDone={refresh} />
+          <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
         </StepCard>
 
         <StepCard n={5} title="Apply for Invoice Discounting" status={frDisc?.status}>

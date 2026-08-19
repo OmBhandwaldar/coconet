@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
+import { DocButton } from '@/components/DocViewer';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
@@ -59,6 +60,7 @@ export default function BuyerPage() {
               gross_value: AMT.poGross, quantity: AMT.poQty, price_per_unit: AMT.poPrice,
               item_description: 'Steel panels', delivery_terms: '45 days', payment_terms: '30 days', doc_hash: `po-${code}`,
             })} onDone={refresh} />
+          <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
         </StepCard>
 
         <StepCard n={2} title="Record Goods Receipt (GRN)" status={grn?.status}>
@@ -69,12 +71,14 @@ export default function BuyerPage() {
               () => apiCall('POST', '/api/trade-docs/grn', { grn_id: ids.grn, po_id: ids.po, received_qty: AMT.grnQty }),
               () => apiCall('PUT', `/api/trade-docs/grn/${ids.grn}/accept`),
             ])} onDone={refresh} />
+          <DocButton doc={grn ? { kind: 'GRN', data: grn } : null} label="View GRN" />
         </StepCard>
 
         <StepCard n={3} title="Approve Invoice" status={inv?.status}>
           Approve the supplier&apos;s invoice ({inrUsd(AMT.invAmount)}) once the 3-way match passes.
           <ActionButton label="Approve Invoice" disabled={inv?.status !== 'Matched'}
             run={() => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/approve`)} onDone={refresh} />
+          <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
         </StepCard>
 
         <StepCard n={4} title="Create & Fund Escrow" status={esc?.status}>

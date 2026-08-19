@@ -8,6 +8,12 @@ export interface PurchaseOrder {
   gross_value: number;
   quantity: number;
   status: string;
+  price_per_unit?: number;
+  item_description?: string;
+  delivery_terms?: string;
+  payment_terms?: string;
+  doc_hash?: string;
+  created_at?: string;
 }
 
 export interface Invoice {
@@ -22,6 +28,9 @@ export interface Invoice {
   assignment_status?: string;
   assigned_to?: string;
   match_result?: { passed: boolean };
+  due_date?: string;
+  doc_hash?: string;
+  created_at?: string;
 }
 
 export interface GRN {
@@ -30,6 +39,7 @@ export interface GRN {
   received_qty: number;
   accepted_qty?: number;
   status: string;
+  created_at?: string;
 }
 
 export interface FinanceRequest {

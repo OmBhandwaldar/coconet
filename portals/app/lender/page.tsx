@@ -3,13 +3,15 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
+import { DocButton } from '@/components/DocViewer';
 import { apiCall, apiGet } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT } from '@/lib/amounts';
-import type { Escrow, FinanceRequest, Invoice } from '@/lib/types';
+import type { Escrow, FinanceRequest, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function LenderPage() {
   const { code, ids } = useDeal();
+  const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [frPre, setFrPre] = useState<FinanceRequest | null>(null);
   const [frDisc, setFrDisc] = useState<FinanceRequest | null>(null);
   const [inv, setInv] = useState<Invoice | null>(null);
@@ -17,13 +19,14 @@ export default function LenderPage() {
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    const [fp, fd, i, e] = await Promise.all([
+    const [p, fp, fd, i, e] = await Promise.all([
+      apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`),
       apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
       apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`),
     ]);
-    setFrPre(fp); setFrDisc(fd); setInv(i); setEsc(e);
+    setPo(p); setFrPre(fp); setFrDisc(fd); setInv(i); setEsc(e);
   }, [ids]);
 
   useEffect(() => {
@@ -56,6 +59,7 @@ export default function LenderPage() {
               Verify the PO on-chain and that it has no existing lien.
               <ActionButton label="Validate" disabled={frPre?.status !== 'Requested'}
                 run={() => apiCall('PUT', `/api/finance/${ids.frPre}/validate-eligibility`)} onDone={refresh} />
+              <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
             </StepCard>
             <StepCard n={2} title="Submit Quote" status={frPre?.status}>
               Offer {inrUsd(AMT.preShip)} @ {(AMT.interestRate * 100).toFixed(0)}% for {AMT.tenorDays} days.
@@ -82,6 +86,7 @@ export default function LenderPage() {
               Verify the invoice is approved + 3-way matched, and not already financed.
               <ActionButton label="Validate" disabled={frDisc?.status !== 'Requested'}
                 run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/validate-eligibility`)} onDone={refresh} />
+              <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
             </StepCard>
             <StepCard n={6} title="Submit Discounting Quote" status={frDisc?.status}>
               Offer a {(AMT.discRate * 100).toFixed(0)}% discount ({inrUsd(AMT.discRequested)}).
