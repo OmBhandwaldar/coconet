@@ -41,6 +41,9 @@ export default function SupplierPage() {
   // Derived from the actual on-chain values (parsed or entered) — not hardcoded.
   const preShip = preShipAmount(po?.gross_value ?? AMT.poGross);
   const discAmt = discGross(inv?.amount ?? AMT.invAmount);
+  // Invoice defaults follow the PO value and accepted GRN qty so the 3-way match holds.
+  const invAmt = po?.gross_value ?? AMT.invAmount;
+  const invQty = grn?.accepted_qty ?? AMT.invQty;
 
   if (!code || !ids) {
     return (
@@ -79,18 +82,18 @@ export default function SupplierPage() {
         </StepCard>
 
         <StepCard n={4} title="Raise Invoice" status={inv?.status}>
-          Raise the invoice for the accepted quantity ({inrUsd(AMT.invAmount)}); the platform runs the 3-way match.
+          Raise the invoice for the accepted quantity ({inrUsd(invAmt)}); the platform runs the 3-way match.
           <DocUpload label="Attach invoice document (optional)" disabled={!!inv} onUploaded={(h) => setInvDocHash(h)} />
           <ActionButton label="Raise Invoice + 3-Way Match" disabled={!grn?.accepted_qty || !!inv}
             run={() => apiSeq([
-              () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: AMT.invAmount, quantity: AMT.invQty, currency: 'INR', due_date: '2024-12-31', doc_hash: invDocHash ?? `inv-${code}` }),
+              () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: invAmt, quantity: invQty, currency: 'INR', due_date: '2024-12-31', doc_hash: invDocHash ?? `inv-${code}` }),
               () => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/match`),
             ])} onDone={refresh} />
           <ParseImport
             label="Parse & import from document"
             showDueDate
             disabled={!grn?.accepted_qty || !!inv}
-            defaults={{ amount: AMT.invAmount, quantity: AMT.invQty, due_date: '2024-12-31' }}
+            defaults={{ amount: invAmt, quantity: invQty, due_date: '2024-12-31' }}
             onSubmit={(c, h) => apiSeq([
               () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.inv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: c.amount, quantity: c.quantity, currency: 'INR', due_date: c.due_date ?? '2024-12-31', doc_hash: h }),
               () => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/match`),

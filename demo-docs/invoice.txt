@@ -1,0 +1,15 @@
+TAX INVOICE
+
+Invoice No: INV-2024-1102
+Date:       15/11/2024
+Due Date:   31/12/2024
+PO No:      TM-PO-2024-0892
+
+From: Supplier Ltd
+To:   Buyer Corp
+
+Description: Pressed Steel Panels (accepted quantity)
+Quantity:    9900 units
+Rate:        Rs 2,500
+
+Total Amount: Rs 2,47,50,000

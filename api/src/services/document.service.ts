@@ -55,6 +55,7 @@ export interface StoredDocument {
 export interface ParsedFields {
   amount?: number;
   quantity?: number;
+  item?: string;
   invoice_number?: string;
   po_number?: string;
   due_date?: string;
@@ -91,6 +92,12 @@ export async function parseDocument(buffer: Buffer, contentType: string): Promis
 
   const qty = norm.match(/([\d,]{1,7})\s*(?:units|nos|pcs|pieces|qty)\b/i) || norm.match(/quantity\D{0,6}([\d,]{1,7})/i);
   if (qty) { const n = num(qty[1]); if (n > 0) { fields.quantity = n; found.push('quantity'); } }
+
+  const itm = norm.match(/(?:item|description|product|goods|particulars)\s*(?:name)?\s*[:\-]\s*([A-Za-z][A-Za-z0-9 &/\-]{1,39})/i);
+  if (itm) {
+    const v = itm[1].trim().replace(/\s+(?:qty|quantity|hsn|amount|total|price|units|nos|pcs).*$/i, '').trim();
+    if (v) { fields.item = v; found.push('item'); }
+  }
 
   const inv = norm.match(/invoice\s*(?:no\.?|number|#)\s*[:\-]?\s*([A-Za-z0-9/\-]+)/i);
   if (inv) { fields.invoice_number = inv[1]; found.push('invoice_number'); }

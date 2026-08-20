@@ -57,7 +57,7 @@ export async function uploadFile(file: File): Promise<string | null> {
 
 export interface ParseResult {
   doc_hash: string;
-  fields: { amount?: number; quantity?: number; invoice_number?: string; po_number?: string; due_date?: string };
+  fields: { amount?: number; quantity?: number; item?: string; invoice_number?: string; po_number?: string; due_date?: string };
   found: string[];
   text_snippet: string;
 }

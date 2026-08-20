@@ -1,0 +1,15 @@
+PURCHASE ORDER
+
+PO No: TM-PO-2024-0892
+Date: 01/10/2024
+
+Buyer:    Buyer Corp
+Supplier: Supplier Ltd
+
+Item:     Pressed Steel Panels
+Quantity: 10000 units
+Rate:     Rs 2,500
+Delivery: 45 days
+Payment:  30 days after delivery
+
+Total Amount: Rs 2,50,00,000
