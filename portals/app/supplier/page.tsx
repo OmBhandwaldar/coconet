@@ -8,7 +8,7 @@ import { DocUpload } from '@/components/DocUpload';
 import { ParseImport } from '@/components/ParseImport';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
-import { AMT } from '@/lib/amounts';
+import { AMT, discGross, preShipAmount } from '@/lib/amounts';
 import type { FinanceRequest, GRN, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function SupplierPage() {
@@ -38,6 +38,10 @@ export default function SupplierPage() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  // Derived from the actual on-chain values (parsed or entered) — not hardcoded.
+  const preShip = preShipAmount(po?.gross_value ?? AMT.poGross);
+  const discAmt = discGross(inv?.amount ?? AMT.invAmount);
+
   if (!code || !ids) {
     return (
       <main>
@@ -63,9 +67,9 @@ export default function SupplierPage() {
         </StepCard>
 
         <StepCard n={2} title="Request Pre-Shipment Finance" status={frPre?.status}>
-          Borrow {inrUsd(AMT.preShip)} against the PO to fund production.
+          Borrow {inrUsd(preShip)} against the PO to fund production.
           <ActionButton label="Request Pre-Shipment Finance" disabled={po?.status !== 'Acknowledged' || !!frPre}
-            run={() => apiCall('POST', '/api/finance/pre-shipment', { request_id: ids.frPre, po_id: ids.po, requestor_org_id: ORG.supplier, requested_amount: AMT.preShip, lender_id: ORG.lender })} onDone={refresh} />
+            run={() => apiCall('POST', '/api/finance/pre-shipment', { request_id: ids.frPre, po_id: ids.po, requestor_org_id: ORG.supplier, requested_amount: preShip, lender_id: ORG.lender })} onDone={refresh} />
         </StepCard>
 
         <StepCard n={3} title="Accept Finance Offer" status={frPre?.security_interest_state === 'Perfected' ? 'Accepted' : frPre?.status}>
@@ -96,9 +100,9 @@ export default function SupplierPage() {
         </StepCard>
 
         <StepCard n={5} title="Apply for Invoice Discounting" status={frDisc?.status}>
-          Sell the approved invoice to the lender at a {(AMT.discRate * 100).toFixed(0)}% discount for early cash.
+          Sell the approved invoice ({inrUsd(inv?.amount ?? AMT.invAmount)}) to the lender at a {(AMT.discRate * 100).toFixed(0)}% discount for early cash.
           <ActionButton label="Apply for Invoice Discounting" disabled={inv?.status !== 'Approved' || !!frDisc}
-            run={() => apiCall('POST', '/api/finance/invoice-discounting', { request_id: ids.frDisc, invoice_id: ids.inv, requestor_org_id: ORG.supplier, requested_amount: AMT.discRequested, lender_id: ORG.lender, discount_rate: AMT.discRate })} onDone={refresh} />
+            run={() => apiCall('POST', '/api/finance/invoice-discounting', { request_id: ids.frDisc, invoice_id: ids.inv, requestor_org_id: ORG.supplier, requested_amount: discAmt, lender_id: ORG.lender, discount_rate: AMT.discRate })} onDone={refresh} />
         </StepCard>
 
         <StepCard n={6} title="Accept Discounting Offer" status={frDisc?.status}>

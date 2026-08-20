@@ -8,7 +8,7 @@ import { DocUpload } from '@/components/DocUpload';
 import { ParseImport } from '@/components/ParseImport';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
-import { AMT } from '@/lib/amounts';
+import { AMT, escrowUsd } from '@/lib/amounts';
 import type { Escrow, GRN, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function BuyerPage() {
@@ -48,6 +48,10 @@ export default function BuyerPage() {
   }
 
   const invReady = inv?.status === 'Approved' || inv?.status === 'Assigned';
+  // Escrow amount derives from the invoice value — not hardcoded.
+  const escInvAmount = inv?.amount ?? AMT.invAmount;
+  const escInvQty = inv?.quantity ?? AMT.invQty;
+  const escUsd = escrowUsd(escInvAmount);
 
   return (
     <main>
@@ -97,12 +101,12 @@ export default function BuyerPage() {
         </StepCard>
 
         <StepCard n={4} title="Create & Fund Escrow" status={esc?.status}>
-          Deposit {usd(AMT.escUsd)} into a programmable escrow, beneficiary = Lender.
+          Deposit {usd(escUsd)} into a programmable escrow, beneficiary = Lender.
           <ActionButton label="Create & Fund Escrow" disabled={!invReady || (!!esc && esc.status !== 'None')}
             run={() => apiSeq([
-              () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.escInv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: AMT.invAmount, quantity: AMT.invQty, currency: 'INR', due_date: '2024-12-31', doc_hash: `escinv-${code}` }),
+              () => apiCall('POST', '/api/trade-docs/invoices', { invoice_id: ids.escInv, supplier_id: ORG.supplier, buyer_id: ORG.buyer, po_id: ids.po, grn_id: ids.grn, amount: escInvAmount, quantity: escInvQty, currency: 'INR', due_date: '2024-12-31', doc_hash: `escinv-${code}` }),
               () => apiCall('PUT', `/api/trade-docs/invoices/${ids.escInv}/match`),
-              () => apiCall('POST', '/api/escrow/instructions', { escrow_payment_id: ids.esc, buyer_org_id: ORG.buyer, beneficiary_org_id: ORG.lender, linked_invoice_id: ids.escInv, amount_usd: AMT.escUsd }),
+              () => apiCall('POST', '/api/escrow/instructions', { escrow_payment_id: ids.esc, buyer_org_id: ORG.buyer, beneficiary_org_id: ORG.lender, linked_invoice_id: ids.escInv, amount_usd: escUsd }),
               () => apiCall('POST', `/api/escrow/instructions/${ids.esc}/fund`),
             ])} onDone={refresh} />
         </StepCard>
@@ -111,7 +115,7 @@ export default function BuyerPage() {
           Final approval flips the on-chain condition; the escrow auto-releases to the Lender across chains.
           <ActionButton label="Approve & Release" disabled={esc?.status !== 'Funded'}
             run={() => apiCall('PUT', `/api/trade-docs/invoices/${ids.escInv}/approve`)} onDone={refresh} />
-          {esc?.status === 'Released' && <p className="mt-2 text-sm font-semibold text-emerald-600">Released {usd(AMT.escUsd)} to Lender ✓</p>}
+          {esc?.status === 'Released' && <p className="mt-2 text-sm font-semibold text-emerald-600">Released {usd(escUsd)} to Lender ✓</p>}
         </StepCard>
 
         <StepCard n={6} title="Sad path — Refund (optional)">

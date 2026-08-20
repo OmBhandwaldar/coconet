@@ -6,7 +6,7 @@ import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { apiCall, apiGet } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
-import { AMT } from '@/lib/amounts';
+import { AMT, discGross, escrowUsd, preShipAmount } from '@/lib/amounts';
 import type { Escrow, FinanceRequest, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function LenderPage() {
@@ -35,6 +35,10 @@ export default function LenderPage() {
     return () => clearInterval(t);
   }, [refresh]);
 
+  // Amounts come from each request / the linked PO & invoice — not hardcoded.
+  const preShip = frPre?.requested_amount ?? preShipAmount(po?.gross_value ?? AMT.poGross);
+  const discAmt = frDisc?.requested_amount ?? discGross(inv?.amount ?? AMT.invAmount);
+
   if (!code || !ids) {
     return (
       <main>
@@ -62,14 +66,14 @@ export default function LenderPage() {
               <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
             </StepCard>
             <StepCard n={2} title="Submit Quote" status={frPre?.status}>
-              Offer {inrUsd(AMT.preShip)} @ {(AMT.interestRate * 100).toFixed(0)}% for {AMT.tenorDays} days.
+              Offer {inrUsd(preShip)} @ {(AMT.interestRate * 100).toFixed(0)}% for {AMT.tenorDays} days.
               <ActionButton label="Submit Quote" disabled={frPre?.status !== 'Under Review'}
                 run={() => apiCall('PUT', `/api/finance/${ids.frPre}/quote`, { advance_rate: AMT.advanceRate, interest_rate: AMT.interestRate, tenor_days: AMT.tenorDays })} onDone={refresh} />
             </StepCard>
             <StepCard n={3} title="Approve" status={frPre?.approved_amount ? 'Approved' : undefined}>
-              Approve the advance amount ({inrUsd(AMT.preShip)}).
+              Approve the advance amount ({inrUsd(preShip)}).
               <ActionButton label="Approve Finance" disabled={frPre?.status !== 'Offered'}
-                run={() => apiCall('PUT', `/api/finance/${ids.frPre}/approve`, { approved_amount: AMT.preShip })} onDone={refresh} />
+                run={() => apiCall('PUT', `/api/finance/${ids.frPre}/approve`, { approved_amount: preShip })} onDone={refresh} />
             </StepCard>
             <StepCard n={4} title="Disburse" status={frPre?.status}>
               After the supplier accepts, disburse the loan.
@@ -89,7 +93,7 @@ export default function LenderPage() {
               <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
             </StepCard>
             <StepCard n={6} title="Submit Discounting Quote" status={frDisc?.status}>
-              Offer a {(AMT.discRate * 100).toFixed(0)}% discount ({inrUsd(AMT.discRequested)}).
+              Offer a {(AMT.discRate * 100).toFixed(0)}% discount ({inrUsd(discAmt)}).
               <ActionButton label="Submit Quote" disabled={frDisc?.status !== 'Under Review'}
                 run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/quote`, { discount_rate: AMT.discRate })} onDone={refresh} />
             </StepCard>
@@ -109,7 +113,7 @@ export default function LenderPage() {
           <StepCard n={8} title="Receive Payment from Escrow" status={esc?.status}>
             When the buyer gives final approval, the escrow auto-releases to you across chains.
             {esc?.status === 'Released'
-              ? <p className="mt-2 text-sm font-semibold text-emerald-600">Received {usd(AMT.escUsd)} from escrow ✓</p>
+              ? <p className="mt-2 text-sm font-semibold text-emerald-600">Received {usd(escrowUsd(inv?.amount ?? AMT.invAmount))} from escrow ✓</p>
               : <p className="mt-2 text-xs text-slate-400">Waiting for release… (escrow: {esc?.status ?? 'not created'})</p>}
           </StepCard>
         </section>
