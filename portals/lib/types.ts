@@ -53,6 +53,10 @@ export interface FinanceRequest {
   approved_amount?: number;
   disbursed_amount?: number;
   net_disbursed?: number;
+  advance_rate?: number;
+  interest_rate?: number;
+  tenor_days?: number;
+  discount_rate?: number;
   security_interest_state: string;
   status: string;
   eligibility?: { passed: boolean };

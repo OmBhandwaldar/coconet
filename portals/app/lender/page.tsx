@@ -6,7 +6,7 @@ import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { apiCall, apiGet } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
-import { AMT, discGross, escrowUsd, preShipAmount } from '@/lib/amounts';
+import { AMT, escrowUsd } from '@/lib/amounts';
 import type { Escrow, FinanceRequest, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function LenderPage() {
@@ -35,9 +35,20 @@ export default function LenderPage() {
     return () => clearInterval(t);
   }, [refresh]);
 
-  // Amounts come from each request / the linked PO & invoice — not hardcoded.
-  const preShip = frPre?.requested_amount ?? preShipAmount(po?.gross_value ?? AMT.poGross);
-  const discAmt = frDisc?.requested_amount ?? discGross(inv?.amount ?? AMT.invAmount);
+  // The lender sets its own quote (defaults seeded from config). Once a quote is
+  // submitted, the stored terms on the request are the source of truth.
+  const [advPct, setAdvPct] = useState(AMT.advanceRate * 100);
+  const [intPct, setIntPct] = useState(AMT.interestRate * 100);
+  const [tenor, setTenor] = useState(AMT.tenorDays);
+  const [discPct, setDiscPct] = useState(AMT.discRate * 100);
+
+  const effAdv = frPre?.advance_rate ?? advPct / 100;
+  const effIntPct = frPre?.interest_rate != null ? frPre.interest_rate * 100 : intPct;
+  const effTenor = frPre?.tenor_days ?? tenor;
+  const effDiscPct = frDisc?.discount_rate != null ? frDisc.discount_rate * 100 : discPct;
+  // Offered advance derives from the lender's advance rate × the PO value.
+  const preShip = Math.round((po?.gross_value ?? AMT.poGross) * effAdv);
+  const discAmt = Math.round((inv?.amount ?? AMT.invAmount) * (1 - effDiscPct / 100));
 
   if (!code || !ids) {
     return (
@@ -66,9 +77,20 @@ export default function LenderPage() {
               <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
             </StepCard>
             <StepCard n={2} title="Submit Quote" status={frPre?.status}>
-              Offer {inrUsd(preShip)} @ {(AMT.interestRate * 100).toFixed(0)}% for {AMT.tenorDays} days.
+              {frPre?.status === 'Under Review' ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <RateField label="Advance %" value={advPct} onChange={setAdvPct} />
+                    <RateField label="Interest %" value={intPct} onChange={setIntPct} />
+                    <RateField label="Tenor (days)" value={tenor} onChange={setTenor} step={1} />
+                  </div>
+                  <p className="mt-1 text-sm text-slate-700">Offer: <span className="font-semibold">{inrUsd(preShip)}</span> @ {intPct}% for {tenor} days.</p>
+                </>
+              ) : (
+                <>Offer {inrUsd(preShip)} @ {effIntPct}% for {effTenor} days.</>
+              )}
               <ActionButton label="Submit Quote" disabled={frPre?.status !== 'Under Review'}
-                run={() => apiCall('PUT', `/api/finance/${ids.frPre}/quote`, { advance_rate: AMT.advanceRate, interest_rate: AMT.interestRate, tenor_days: AMT.tenorDays })} onDone={refresh} />
+                run={() => apiCall('PUT', `/api/finance/${ids.frPre}/quote`, { advance_rate: advPct / 100, interest_rate: intPct / 100, tenor_days: tenor })} onDone={refresh} />
             </StepCard>
             <StepCard n={3} title="Approve" status={frPre?.approved_amount ? 'Approved' : undefined}>
               Approve the advance amount ({inrUsd(preShip)}).
@@ -93,9 +115,18 @@ export default function LenderPage() {
               <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
             </StepCard>
             <StepCard n={6} title="Submit Discounting Quote" status={frDisc?.status}>
-              Offer a {(AMT.discRate * 100).toFixed(0)}% discount ({inrUsd(discAmt)}).
+              {frDisc?.status === 'Under Review' ? (
+                <>
+                  <div className="grid grid-cols-3 gap-2">
+                    <RateField label="Discount %" value={discPct} onChange={setDiscPct} />
+                  </div>
+                  <p className="mt-1 text-sm text-slate-700">Pay the supplier <span className="font-semibold">{inrUsd(discAmt)}</span> (discount {discPct}%).</p>
+                </>
+              ) : (
+                <>Offer a {effDiscPct}% discount ({inrUsd(discAmt)}).</>
+              )}
               <ActionButton label="Submit Quote" disabled={frDisc?.status !== 'Under Review'}
-                run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/quote`, { discount_rate: AMT.discRate })} onDone={refresh} />
+                run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/quote`, { discount_rate: discPct / 100 })} onDone={refresh} />
             </StepCard>
             <StepCard n={7} title="Disburse with Net Settlement" status={frDisc?.status}>
               After the supplier accepts, pay the discounted value and auto-settle the pre-shipment loan.
@@ -119,5 +150,14 @@ export default function LenderPage() {
         </section>
       </div>
     </main>
+  );
+}
+
+function RateField({ label, value, onChange, step = 0.5 }: { label: string; value: number; onChange: (n: number) => void; step?: number }) {
+  return (
+    <label className="text-xs text-slate-500">{label}
+      <input type="number" step={step} value={value} onChange={(e) => onChange(Number(e.target.value))}
+        className="mt-0.5 w-full rounded border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+    </label>
   );
 }
