@@ -5,7 +5,7 @@ financing, and buyer-funded programmable-money escrow on a single shared event f
 
 - **Hyperledger Fabric** — identity, trade documents, finance (workflow + provenance).
 - **Polygon (Supernet / local Hardhat)** — programmable-money escrow that settles in USDC.
-- **Bridge** — relays Fabric events to Polygon, correlated by `escrowPaymentId`.
+- **Bridge** —relays Fabric events to Polygon, correlated by `escrowPaymentId`.
 
 The MVP reproduces the **Tata Motors / Bharat Stampings / HDFC Bank** worked example
 end-to-end. See [EXAMPLE-FLOW.md](EXAMPLE-FLOW.md) (the frozen reference), [PLAN.md](PLAN.md)
