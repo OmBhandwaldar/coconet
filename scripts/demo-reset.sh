@@ -46,7 +46,7 @@ bash scripts/setup-channel.sh
 
 step "Deploying chaincodes (fresh channel → sequence 1)..."
 bash scripts/deploy-chaincode.sh --name onboarding-cc --dir onboarding-cc --version 1.0 --sequence 1
-bash scripts/deploy-chaincode.sh --name trade-doc-cc  --dir trade-doc-cc  --version 1.1 --sequence 1
+bash scripts/deploy-chaincode.sh --name trade-doc-cc  --dir trade-doc-cc  --version 1.3 --sequence 1
 bash scripts/deploy-chaincode.sh --name finance-cc    --dir finance-cc    --version 1.0 --sequence 1
 
 step "Deploying Polygon contracts (USDC + EscrowVault + EscrowFactory)..."

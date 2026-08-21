@@ -49,7 +49,7 @@ export async function fulfillPO(req: Request, res: Response, next: NextFunction)
 // ─── Goods Receipt ──────────────────────────────────────────────────────────
 export async function createGRN(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const grn = await service.createGRN(req.body.grn_id, req.body.po_id, req.body.received_qty);
+    const grn = await service.createGRN(req.body.grn_id, req.body.po_id, req.body.received_qty, req.body.doc_hash);
     res.status(201).json({ success: true, data: grn, correlationId: req.correlationId });
   } catch (err) { next(err); }
 }

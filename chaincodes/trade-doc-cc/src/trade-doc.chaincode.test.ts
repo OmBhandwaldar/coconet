@@ -50,7 +50,7 @@ const cc = new TradeDocChaincode();
 // Helper: stand up a PO + accepted GRN so an invoice can match.
 async function seedPoAndGrn(ctx: any) {
   await cc.createPO(ctx, JSON.stringify(validPO));
-  await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '10000');
+  await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '10000', '');
   await cc.acceptGRN(ctx, validInvoice.grn_id);
 }
 
@@ -130,7 +130,7 @@ describe('TradeDocChaincode', () => {
     it('creates and accepts a GRN, setting accepted_qty', async () => {
       const ctx = makeCtx({});
       await cc.createPO(ctx, JSON.stringify(validPO));
-      await cc.createGRN(ctx, 'grn-1', validPO.po_id, '10000');
+      await cc.createGRN(ctx, 'grn-1', validPO.po_id, '10000', '');
       const grn = JSON.parse(await cc.acceptGRN(ctx, 'grn-1'));
       expect(grn.status).to.equal('Accepted');
       expect(grn.accepted_qty).to.equal(10000);
@@ -138,7 +138,18 @@ describe('TradeDocChaincode', () => {
 
     it('rejects GRN against a non-existent PO', async () => {
       const ctx = makeCtx({});
-      await expect(cc.createGRN(ctx, 'grn-x', 'NO-SUCH-PO', '10')).to.be.rejectedWith(/not found/);
+      await expect(cc.createGRN(ctx, 'grn-x', 'NO-SUCH-PO', '10', '')).to.be.rejectedWith(/not found/);
+    });
+
+    it('stores and registers an optional GRN doc_hash', async () => {
+      const ctx = makeCtx({});
+      await cc.createPO(ctx, JSON.stringify(validPO));
+      const grn = JSON.parse(await cc.createGRN(ctx, 'grn-h', validPO.po_id, '10000', 'grn-hash-xyz'));
+      expect(grn.doc_hash).to.equal('grn-hash-xyz');
+      // A later document reusing that hash is blocked (FR-DOC-04).
+      await expect(
+        cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, grn_id: 'grn-h', doc_hash: 'grn-hash-xyz' }))
+      ).to.be.rejectedWith(/Duplicate document hash/);
     });
   });
 
@@ -195,7 +206,7 @@ describe('TradeDocChaincode', () => {
     it('fails when invoice quantity exceeds accepted GRN quantity', async () => {
       const ctx = makeCtx({});
       await cc.createPO(ctx, JSON.stringify(validPO));
-      await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000');
+      await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
       await cc.acceptGRN(ctx, validInvoice.grn_id);
       await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000
       const inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));

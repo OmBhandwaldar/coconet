@@ -40,6 +40,7 @@ export const createGRNSchema = z.object({
     grn_id: z.string().min(1),
     po_id: z.string().min(1),
     received_qty: z.number().positive(),
+    doc_hash: z.string().optional(),
   }),
 });
 

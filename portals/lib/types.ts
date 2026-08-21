@@ -38,6 +38,7 @@ export interface GRN {
   po_id: string;
   received_qty: number;
   accepted_qty?: number;
+  doc_hash?: string;
   status: string;
   created_at?: string;
 }

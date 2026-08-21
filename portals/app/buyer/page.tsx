@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { DealBar } from '@/components/DealBar';
 import { ActionButton, StepCard, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
+import { DocUpload } from '@/components/DocUpload';
 import { apiCall, apiGet, apiSeq, parseFile } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { escrowUsd } from '@/lib/amounts';
@@ -38,6 +39,23 @@ export default function BuyerPage() {
     setParseNote(r.found.length ? `Auto-filled from ${file.name}: ${r.found.join(', ')}. Review below, then Create PO.` : `Read ${file.name} but found no fields — enter values manually.`);
   }
 
+  // GRN is also the buyer's document — enter the received qty, or upload & parse it.
+  const [grnQty, setGrnQty] = useState<number | null>(null);
+  const [grnDocHash, setGrnDocHash] = useState<string | null>(null);
+  const [grnDocName, setGrnDocName] = useState<string | null>(null);
+  const [grnParsing, setGrnParsing] = useState(false);
+  const [grnNote, setGrnNote] = useState<string | null>(null);
+
+  async function parseGrn(file: File) {
+    setGrnParsing(true); setGrnNote(null);
+    const r = await parseFile(file);
+    setGrnParsing(false);
+    if (!r) { setGrnNote('Could not read that document.'); return; }
+    if (r.fields.quantity) setGrnQty(r.fields.quantity);
+    setGrnDocHash(r.doc_hash); setGrnDocName(file.name);
+    setGrnNote(r.fields.quantity ? `Received qty ${r.fields.quantity.toLocaleString('en-IN')} read from ${file.name}. Review, then Record GRN.` : `Read ${file.name} but no quantity found — check it below.`);
+  }
+
   const refresh = useCallback(async () => {
     if (!ids) return;
     const [p, g, i, e] = await Promise.all([
@@ -67,6 +85,7 @@ export default function BuyerPage() {
   }
 
   const invReady = inv?.status === 'Approved' || inv?.status === 'Assigned';
+  const effGrnQty = grnQty ?? po?.quantity ?? qty;
   // Escrow amount derives from the invoice value — not hardcoded.
   const escInvAmount = inv?.amount ?? poAmount;
   const escInvQty = inv?.quantity ?? qty;
@@ -121,11 +140,29 @@ export default function BuyerPage() {
         </StepCard>
 
         <StepCard n={2} title="Record Goods Receipt (GRN)" status={grn?.status}>
-          Record delivery & accept {(po?.quantity ?? qty).toLocaleString('en-IN')} units.
+          {grn ? (
+            <p className="text-sm text-slate-600">Received & accepted {grn.received_qty?.toLocaleString('en-IN')} units.</p>
+          ) : (
+            <>
+              <p className="mb-2 text-xs text-slate-500">Record what arrived, or upload a GRN document to auto-fill the quantity.</p>
+              <label className="text-xs text-slate-500">Received quantity
+                <input type="number" value={effGrnQty} onChange={(e) => setGrnQty(Number(e.target.value))}
+                  className="mt-0.5 block w-40 rounded border border-slate-300 px-2 py-1 text-sm text-slate-800" />
+              </label>
+              <DocUpload label="Attach GRN document (optional)" onUploaded={(h, n) => { setGrnDocHash(h); setGrnDocName(n); }} />
+              <label className={`mt-2 inline-flex items-center gap-1 rounded-lg border border-dashed px-2.5 py-1 text-xs font-semibold ${grnParsing ? 'cursor-wait border-slate-200 text-slate-400' : 'cursor-pointer border-indigo-300 text-indigo-600 hover:bg-indigo-50'}`}>
+                🔍 {grnDocName ? `Uploaded: ${grnDocName}` : 'Upload & parse GRN'}
+                <input type="file" className="hidden" accept=".pdf,.txt,.png,.jpg,.jpeg"
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) parseGrn(f); }} />
+              </label>
+              {grnParsing && <span className="ml-2 text-xs text-slate-400">reading document…</span>}
+              {grnNote && <p className="mt-1 text-xs text-emerald-600">{grnNote}</p>}
+            </>
+          )}
           <ActionButton label="Record & Accept GRN"
-            disabled={!!grn || !po || (po.status !== 'Acknowledged' && po.status !== 'Locked')}
+            disabled={!!grn || !po || (po.status !== 'Acknowledged' && po.status !== 'Locked') || !(effGrnQty > 0)}
             run={() => apiSeq([
-              () => apiCall('POST', '/api/trade-docs/grn', { grn_id: ids.grn, po_id: ids.po, received_qty: po?.quantity ?? qty }),
+              () => apiCall('POST', '/api/trade-docs/grn', { grn_id: ids.grn, po_id: ids.po, received_qty: effGrnQty, doc_hash: grnDocHash ?? undefined }),
               () => apiCall('PUT', `/api/trade-docs/grn/${ids.grn}/accept`),
             ])} onDone={refresh} />
           <DocButton doc={grn ? { kind: 'GRN', data: grn } : null} label="View GRN" />

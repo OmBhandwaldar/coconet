@@ -31,6 +31,7 @@ export interface GoodsReceipt {
   po_id: string;
   received_qty: number;
   accepted_qty?: number;
+  doc_hash?: string;
   status: GRNStatus;
   created_at: string;
   updated_at: string;
@@ -212,7 +213,7 @@ export class TradeDocChaincode extends Contract {
   // ═══ Goods Receipt (minimal) ════════════════════════════════════════════════
 
   @Transaction()
-  async createGRN(ctx: Context, grnId: string, poId: string, receivedQty: string): Promise<string> {
+  async createGRN(ctx: Context, grnId: string, poId: string, receivedQty: string, docHash: string): Promise<string> {
     if (!grnId) throw new Error('grn_id is required');
     const po = await this.getPO(ctx, poId); // validates PO exists
     if (await this.exists(ctx, this.grnKey(grnId))) {
@@ -226,10 +227,12 @@ export class TradeDocChaincode extends Contract {
       grn_id: grnId,
       po_id: po.po_id,
       received_qty: qty,
+      doc_hash: docHash || undefined,
       status: 'Received',
       created_at: now,
       updated_at: now,
     };
+    if (docHash) await this.registerDocHash(ctx, docHash, 'GRN', grnId);
     await ctx.stub.putState(this.grnKey(grnId), Buffer.from(JSON.stringify(grn)));
     ctx.stub.setEvent('GRNCreated', Buffer.from(JSON.stringify({ grn_id: grnId, po_id: po.po_id, received_qty: qty })));
     return JSON.stringify(grn);

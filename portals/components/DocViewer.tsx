@@ -119,6 +119,7 @@ function GRNView({ grn }: { grn: GRN }) {
         <Field label="Received Qty">{grn.received_qty?.toLocaleString('en-IN')}</Field>
         <Field label="Accepted Qty">{grn.accepted_qty?.toLocaleString('en-IN') ?? '—'}</Field>
       </div>
+      <Hash h={grn.doc_hash} />
     </>
   );
 }

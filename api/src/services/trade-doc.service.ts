@@ -32,6 +32,7 @@ export interface GoodsReceipt {
   po_id: string;
   received_qty: number;
   accepted_qty?: number;
+  doc_hash?: string;
   status: GRNStatus;
   created_at: string;
   updated_at: string;
@@ -84,8 +85,8 @@ export async function fulfillPO(poId: string): Promise<PurchaseOrder> {
 }
 
 // ─── Goods Receipt ──────────────────────────────────────────────────────────
-export async function createGRN(grnId: string, poId: string, receivedQty: number): Promise<GoodsReceipt> {
-  return invoke<GoodsReceipt>(cc, 'createGRN', grnId, poId, String(receivedQty));
+export async function createGRN(grnId: string, poId: string, receivedQty: number, docHash?: string): Promise<GoodsReceipt> {
+  return invoke<GoodsReceipt>(cc, 'createGRN', grnId, poId, String(receivedQty), docHash ?? '');
 }
 export async function acceptGRN(grnId: string): Promise<GoodsReceipt> {
   return invoke<GoodsReceipt>(cc, 'acceptGRN', grnId);
