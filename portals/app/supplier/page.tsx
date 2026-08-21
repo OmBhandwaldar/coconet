@@ -41,9 +41,11 @@ export default function SupplierPage() {
   // Derived from the actual on-chain values (parsed or entered) — not hardcoded.
   const preShip = preShipAmount(po?.gross_value ?? AMT.poGross);
   const discAmt = discGross(inv?.amount ?? AMT.invAmount);
-  // Invoice defaults follow the PO value and accepted GRN qty so the 3-way match holds.
-  const invAmt = po?.gross_value ?? AMT.invAmount;
+  // Invoice bills the accepted GRN qty at the PO unit price — so a short delivery
+  // (accepted < ordered) correctly bills less than the full PO value.
   const invQty = grn?.accepted_qty ?? AMT.invQty;
+  const unitPrice = po?.price_per_unit ?? (po ? Math.round(po.gross_value / (po.quantity || 1)) : 0);
+  const invAmt = po ? invQty * unitPrice : AMT.invAmount;
 
   if (!code || !ids) {
     return (
