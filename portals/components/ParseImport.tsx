@@ -1,6 +1,8 @@
 'use client';
 import { ChangeEvent, ReactNode, useState } from 'react';
 import { ApiResult, parseFile, ParseResult } from '@/lib/api';
+import { inputCls } from '@/components/ui';
+import { IconScan } from '@/components/icons';
 
 export interface Confirmed { amount: number; quantity: number; due_date?: string }
 
@@ -51,8 +53,8 @@ export function ParseImport({
 
   return (
     <div className="mt-2">
-      <label className={`inline-flex items-center gap-1 rounded-lg border border-dashed px-2.5 py-1 text-xs font-semibold ${disabled ? 'cursor-not-allowed border-slate-200 text-slate-300' : 'cursor-pointer border-indigo-300 text-indigo-600 hover:bg-indigo-50'}`}>
-        🔍 {label}
+      <label className={`inline-flex items-center gap-1.5 rounded-lg border border-dashed px-3 py-1.5 text-xs font-semibold transition ${disabled ? 'cursor-not-allowed border-line text-slate-300' : 'cursor-pointer border-brand-300 text-brand-600 hover:bg-brand-50'}`}>
+        <IconScan size={14} /> {label}
         <input type="file" className="hidden" disabled={disabled} onChange={onFile} accept=".pdf,.txt,.png,.jpg,.jpeg" />
       </label>
       {parsing && <span className="ml-2 text-xs text-slate-400">reading document…</span>}
@@ -60,7 +62,7 @@ export function ParseImport({
 
       {result && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setResult(null)}>
-          <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-elevated" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800">Confirm extracted details</h3>
               <button onClick={() => setResult(null)} className="text-slate-400 hover:text-slate-700">✕</button>
@@ -70,14 +72,14 @@ export function ParseImport({
               fields marked <span className="font-semibold text-emerald-600">from document</span> were auto-extracted, the rest use defaults.
             </p>
             <Row label="Amount (₹)" fromDoc={fromDoc('amount')}>
-              <input type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} className="w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+              <input type="number" value={amount} onChange={(e) => setAmount(Number(e.target.value))} className={inputCls} />
             </Row>
             <Row label="Quantity" fromDoc={fromDoc('quantity')}>
-              <input type="number" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className="w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+              <input type="number" value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className={inputCls} />
             </Row>
             {showDueDate && (
               <Row label="Due date" fromDoc={fromDoc('due_date')}>
-                <input type="text" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className="w-full rounded border border-slate-300 px-2 py-1 text-sm" />
+                <input type="text" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputCls} />
               </Row>
             )}
             {(result.fields.invoice_number || result.fields.po_number) && (

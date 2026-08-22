@@ -2,7 +2,54 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --font-plex-sans: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-plex-mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
 body {
-  background: #f8fafc;
-  color: #0f172a;
+  background-color: #F4F7FB;
+  background-image:
+    radial-gradient(1200px 600px at 100% -10%, rgba(47, 92, 184, 0.06), transparent 60%),
+    radial-gradient(900px 500px at -10% 0%, rgba(236, 139, 64, 0.05), transparent 55%);
+  background-attachment: fixed;
+  color: #0E1B2E;
+  font-family: var(--font-plex-sans);
+}
+
+/* Tabular figures for money/ids so columns don't jitter. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+/* Refined, unobtrusive scrollbar. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #C6D2E2 transparent;
+}
+*::-webkit-scrollbar { width: 10px; height: 10px; }
+*::-webkit-scrollbar-thumb {
+  background: #C6D2E2;
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background: #A9BAD1; background-clip: content-box; }
+
+::selection {
+  background: rgba(47, 92, 184, 0.16);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

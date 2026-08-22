@@ -1,7 +1,9 @@
 'use client';
 import { ReactNode, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import { inrUsd } from './ui';
 import { docUrl, isRealHash } from '@/lib/api';
+import { IconDoc, IconExternal, IconCheck } from '@/components/icons';
 import type { GRN, Invoice, PurchaseOrder } from '@/lib/types';
 
 const ORG_NAME: Record<string, string> = {
@@ -31,16 +33,16 @@ function Hash({ h }: { h?: string }) {
   if (!h) return null;
   const real = isRealHash(h);
   return (
-    <div className="mt-4 rounded bg-slate-50 px-3 py-2 text-[11px] text-slate-500">
-      <span className="font-semibold text-slate-600">On-chain fingerprint:</span>{' '}
-      <span className="font-mono break-all">{h}</span>
-      <span className="ml-1 text-emerald-600">✓ verified</span>
+    <div className="mt-4 rounded-xl bg-surface px-3 py-2.5 text-[11px] text-slate-500">
+      <div className="flex items-center gap-1.5">
+        <span className="font-semibold text-slate-600">On-chain fingerprint</span>
+        <span className="inline-flex items-center gap-0.5 text-emerald-600"><IconCheck size={12} /> verified</span>
+      </div>
+      <span className="mt-0.5 block break-all font-mono text-slate-500">{h}</span>
       {real && (
-        <div className="mt-1">
-          <a href={docUrl(h)} target="_blank" rel="noreferrer" className="font-semibold text-brand hover:underline">
-            Open original file ↗
-          </a>
-        </div>
+        <a href={docUrl(h)} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 font-semibold text-brand-600 hover:underline">
+          Open original file <IconExternal size={12} />
+        </a>
       )}
     </div>
   );
@@ -148,21 +150,34 @@ export function DocButton({ doc, label }: { doc: Doc | null; label?: string }) {
   return (
     <>
       <button onClick={() => setOpen(true)}
-        className="mt-2 inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-        📄 {label ?? 'View Document'}
+        className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-slate-600 ring-1 ring-inset ring-line transition hover:bg-surface">
+        <IconDoc size={16} /> {label ?? 'View Document'}
       </button>
-      {open && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setOpen(false)}>
-          <div className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-xl bg-white p-6 shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="mb-3 flex justify-end">
-              <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-700">✕</button>
-            </div>
-            {doc.kind === 'PO' && <POView po={doc.data} />}
-            {doc.kind === 'INVOICE' && <InvoiceView inv={doc.data} />}
-            {doc.kind === 'GRN' && <GRNView grn={doc.data} />}
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
+            onClick={() => setOpen(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, y: 16, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 8, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+              className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-6 shadow-elevated"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex justify-end">
+                <button onClick={() => setOpen(false)} aria-label="Close" className="rounded-lg p-1 text-slate-400 transition hover:bg-surface hover:text-slate-700">✕</button>
+              </div>
+              {doc.kind === 'PO' && <POView po={doc.data} />}
+              {doc.kind === 'INVOICE' && <InvoiceView inv={doc.data} />}
+              {doc.kind === 'GRN' && <GRNView grn={doc.data} />}
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </>
   );
 }

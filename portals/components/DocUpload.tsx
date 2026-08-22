@@ -1,6 +1,7 @@
 'use client';
 import { ChangeEvent, useState } from 'react';
 import { uploadFile } from '@/lib/api';
+import { IconUpload } from '@/components/icons';
 
 // Attach a real document file: uploads it to storage, gets back the on-chain
 // fingerprint, and hands it up. If nothing is attached, the caller falls back
@@ -27,12 +28,12 @@ export function DocUpload({
   }
 
   return (
-    <div className="mt-2">
-      <label className={`inline-flex items-center gap-1 rounded-lg border border-dashed px-2.5 py-1 text-xs font-semibold ${disabled ? 'cursor-not-allowed border-slate-200 text-slate-300' : 'cursor-pointer border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-        📎 {name ? `Attached: ${name}` : label}
+    <div className="inline-flex flex-col">
+      <label className={`inline-flex items-center gap-1.5 rounded-lg border border-dashed px-3 py-1.5 text-xs font-semibold transition ${disabled ? 'cursor-not-allowed border-line text-slate-300' : 'cursor-pointer border-line text-slate-600 hover:border-slate-300 hover:bg-surface'}`}>
+        <IconUpload size={14} /> {name ? `Attached: ${name}` : label}
         <input type="file" className="hidden" disabled={disabled} onChange={onChange} accept=".pdf,.png,.jpg,.jpeg" />
       </label>
-      {busy && <span className="ml-2 text-xs text-slate-400">uploading…</span>}
+      {busy && <span className="mt-1 text-xs text-slate-400">uploading…</span>}
       {err && <p className="mt-1 text-xs text-rose-600">{err}</p>}
     </div>
   );
