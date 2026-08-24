@@ -45,7 +45,7 @@ export default function Home() {
         {/* ── HERO (dark card) ─────────────────────────────────────────── */}
         <motion.section
           variants={stagger} initial="hidden" animate="show"
-          className="relative overflow-hidden rounded-[2rem] bg-night px-6 py-9 text-white sm:px-10 sm:py-12"
+          className="relative overflow-hidden rounded-[2rem] bg-night px-8 py-12 text-white sm:px-16 sm:py-20"
         >
           {/* ambient glows */}
           <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-lime/10 blur-3xl" />
