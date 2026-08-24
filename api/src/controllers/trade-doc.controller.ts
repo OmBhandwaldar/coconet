@@ -90,6 +90,13 @@ export async function matchInvoice(req: Request, res: Response, next: NextFuncti
   } catch (err) { next(err); }
 }
 
+export async function reviseInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const invoice = await service.reviseInvoice(req.params.id, req.body.amount, req.body.quantity, req.body.doc_hash);
+    res.json({ success: true, data: invoice, correlationId: req.correlationId });
+  } catch (err) { next(err); }
+}
+
 export async function getMatchResult(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const invoice = await service.getInvoice(req.params.id);

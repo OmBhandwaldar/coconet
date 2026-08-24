@@ -215,6 +215,33 @@ describe('TradeDocChaincode', () => {
     });
   });
 
+  describe('reviseInvoice', () => {
+    it('corrects a failed Submitted invoice and re-matches to Matched', async () => {
+      const ctx = makeCtx({});
+      await cc.createPO(ctx, JSON.stringify(validPO));
+      await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
+      await cc.acceptGRN(ctx, validInvoice.grn_id);
+      await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000 → fails
+      let inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
+      expect(inv.status).to.equal('Submitted');
+
+      inv = JSON.parse(await cc.reviseInvoice(ctx, validInvoice.invoice_id, '20000000', '8000', ''));
+      expect(inv.status).to.equal('Matched');
+      expect(inv.quantity).to.equal(8000);
+      expect(inv.amount).to.equal(20000000);
+      expect(inv.match_result.passed).to.equal(true);
+    });
+
+    it('refuses to revise a non-Submitted (Matched) invoice', async () => {
+      const ctx = makeCtx({});
+      await seedPoAndGrn(ctx);
+      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await cc.runThreeWayMatch(ctx, validInvoice.invoice_id); // → Matched
+      await expect(cc.reviseInvoice(ctx, validInvoice.invoice_id, '100', '100', ''))
+        .to.be.rejectedWith(/Only a Submitted invoice can be revised/);
+    });
+  });
+
   describe('approve / reject / dispute', () => {
     async function matchedInvoice(ctx: any) {
       await seedPoAndGrn(ctx);

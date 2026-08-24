@@ -11,6 +11,7 @@ import {
   invoiceIdParamSchema,
   invoiceReasonSchema,
   poIdParamSchema,
+  reviseInvoiceSchema,
   submitInvoiceSchema,
 } from '../validators/trade-doc.validator.js';
 
@@ -34,6 +35,7 @@ router.put('/grn/:id/accept', validate(grnIdParamSchema), controller.acceptGRN);
 router.post('/invoices', validate(submitInvoiceSchema), controller.submitInvoice);
 router.get('/invoices/:id', validate(invoiceIdParamSchema), controller.getInvoice);
 router.put('/invoices/:id/match', validate(invoiceIdParamSchema), controller.matchInvoice);
+router.put('/invoices/:id/revise', validate(reviseInvoiceSchema), controller.reviseInvoice);
 router.get('/invoices/:id/match-result', validate(invoiceIdParamSchema), controller.getMatchResult);
 router.put('/invoices/:id/approve', validate(invoiceIdParamSchema), controller.approveInvoice);
 router.put('/invoices/:id/reject', validate(invoiceReasonSchema), controller.rejectInvoice);

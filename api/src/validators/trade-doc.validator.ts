@@ -73,5 +73,14 @@ export const invoiceReasonSchema = z.object({
   body: z.object({ reason: z.string().optional() }),
 });
 
+export const reviseInvoiceSchema = z.object({
+  params: z.object({ id: z.string().min(1) }),
+  body: z.object({
+    amount: z.number().positive(),
+    quantity: z.number().positive(),
+    doc_hash: z.string().optional(),
+  }),
+});
+
 export type CreatePOInput = z.infer<typeof createPOSchema>['body'];
 export type SubmitInvoiceInput = z.infer<typeof submitInvoiceSchema>['body'];

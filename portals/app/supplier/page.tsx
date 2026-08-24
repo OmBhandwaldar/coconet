@@ -128,7 +128,25 @@ export default function SupplierPage() {
                 onDone={refresh} />
               <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
             </div>
-            {inv?.status === 'Submitted' && inv.match_result?.passed === false && <MatchAlert reasons={inv.match_result.reasons} />}
+            {inv?.status === 'Submitted' && inv.match_result?.passed === false && (
+              <>
+                <MatchAlert reasons={inv.match_result.reasons} />
+                <div className="rounded-xl border border-line bg-surface p-3">
+                  <p className="text-xs font-semibold text-ink">Correct &amp; resubmit</p>
+                  <p className="mt-0.5 text-xs text-slate-500">Issue a revised invoice within the delivered quantity ({invQty.toLocaleString('en-IN')} units) and PO value — it re-runs the 3-way match on the same invoice.</p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <ActionButton label={`Raise Corrected Invoice (${inrUsd(invAmt)})`} icon={<IconReceipt size={16} />}
+                      run={() => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/revise`, { amount: invAmt, quantity: invQty })} onDone={refresh} />
+                    <ParseImport
+                      label="Parse corrected document"
+                      showDueDate={false}
+                      defaults={{ amount: invAmt, quantity: invQty }}
+                      onSubmit={(c, h) => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/revise`, { amount: c.amount, quantity: c.quantity, doc_hash: h })}
+                      onDone={refresh} />
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </ActionCard>
 

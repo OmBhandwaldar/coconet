@@ -102,6 +102,9 @@ export async function submitInvoice(input: SubmitInvoiceInput): Promise<Invoice>
 export async function runThreeWayMatch(invoiceId: string): Promise<Invoice> {
   return invoke<Invoice>(cc, 'runThreeWayMatch', invoiceId);
 }
+export async function reviseInvoice(invoiceId: string, amount: number, quantity: number, docHash?: string): Promise<Invoice> {
+  return invoke<Invoice>(cc, 'reviseInvoice', invoiceId, String(amount), String(quantity), docHash ?? '');
+}
 export async function getInvoice(invoiceId: string): Promise<Invoice> {
   return query<Invoice>(cc, 'getInvoice', invoiceId);
 }

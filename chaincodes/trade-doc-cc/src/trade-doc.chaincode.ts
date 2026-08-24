@@ -310,7 +310,16 @@ export class TradeDocChaincode extends Contract {
     if (invoice.status !== 'Submitted') {
       throw new Error(`3-way match requires invoice in Submitted, found ${invoice.status}`);
     }
+    await this.applyMatch(ctx, invoice);
+    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    return JSON.stringify(invoice);
+  }
 
+  // Evaluate the 3-way match against the in-memory invoice object and mutate it
+  // (status, match_result) + emit the outcome event. The caller owns the single
+  // putState — so a revise-then-match in one tx isn't defeated by Fabric not
+  // surfacing same-tx uncommitted writes on a re-read.
+  private async applyMatch(ctx: Context, invoice: Invoice): Promise<void> {
     const reasons: string[] = [];
     const po = await this.tryGetPO(ctx, invoice.po_id);
     const grn = await this.tryGetGRN(ctx, invoice.grn_id);
@@ -337,21 +346,45 @@ export class TradeDocChaincode extends Contract {
     }
 
     const passed = po_link && grn_link && amount_within_po && qty_within_grn && reasons.length === 0;
-    const matchResult: MatchResult = {
+    invoice.match_result = {
       passed,
       checks: { po_link, grn_link, amount_within_po, qty_within_grn },
       reasons,
       matched_at: this.txTimestamp(ctx),
     };
-
-    invoice.match_result = matchResult;
     invoice.updated_at = this.txTimestamp(ctx);
     if (passed) {
       invoice.status = 'Matched';
-      ctx.stub.setEvent('InvoiceMatched', Buffer.from(JSON.stringify({ invoice_id: invoiceId })));
+      ctx.stub.setEvent('InvoiceMatched', Buffer.from(JSON.stringify({ invoice_id: invoice.invoice_id })));
     } else {
-      ctx.stub.setEvent('InvoiceMatchFailed', Buffer.from(JSON.stringify({ invoice_id: invoiceId, reasons })));
+      ctx.stub.setEvent('InvoiceMatchFailed', Buffer.from(JSON.stringify({ invoice_id: invoice.invoice_id, reasons })));
     }
+  }
+
+  // Correct a Submitted (not yet approved) invoice whose 3-way match failed, then
+  // re-run the match. Ledger history preserves prior versions (audit intact). Only
+  // legal pre-approval — once Matched/Approved/Assigned the invoice is immutable.
+  @Transaction()
+  async reviseInvoice(ctx: Context, invoiceId: string, amount: string, quantity: string, docHash: string): Promise<string> {
+    const invoice = await this.getInvoiceState(ctx, invoiceId);
+    if (invoice.status !== 'Submitted') {
+      throw new Error(`Only a Submitted invoice can be revised, found ${invoice.status}`);
+    }
+    const amt = Number(amount);
+    const qty = Number(quantity);
+    if (!Number.isFinite(amt) || amt <= 0) throw new Error(`Invalid amount: ${amount}`);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Invalid quantity: ${quantity}`);
+
+    if (docHash && docHash !== invoice.doc_hash) {
+      await this.registerDocHash(ctx, docHash, 'Invoice', invoiceId); // FR-DOC-04 on the corrected doc
+      invoice.doc_hash = docHash;
+    }
+    invoice.amount = amt;
+    invoice.quantity = qty;
+    ctx.stub.setEvent('InvoiceRevised', Buffer.from(JSON.stringify({ invoice_id: invoiceId, amount: amt, quantity: qty })));
+
+    // Re-run the 3-way match on the corrected figures, then persist once.
+    await this.applyMatch(ctx, invoice);
     await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
     return JSON.stringify(invoice);
   }
