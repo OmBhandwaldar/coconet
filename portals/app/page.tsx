@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { Logo, LogoMark } from '@/components/Logo';
+import { Logo } from '@/components/Logo';
 import { fadeUp, stagger } from '@/lib/motion';
 import { ensureOrgs, useDeal } from '@/lib/deal';
 import {
@@ -76,16 +76,35 @@ export default function Home() {
               </motion.div>
             </div>
 
-            {/* floating document cards */}
-            <motion.div variants={fadeUp} className="relative hidden h-72 lg:block">
-              <FloatingDoc
-                className="absolute left-4 top-4 rotate-[-9deg]"
-                tint="from-slate-700 to-slate-900" label="PURCHASE ORDER" ref1="PO-2024-0892" amount="₹1,00,00,000" delay={0}
-              />
-              <FloatingDoc
-                className="absolute right-2 top-24 rotate-[7deg]"
-                tint="from-[#2b4d3a] to-[#16241c]" label="TAX INVOICE" ref1="INV-2024-0892" amount="₹90,00,000" delay={0.4}
-              />
+            {/* floating status cards */}
+            <motion.div variants={fadeUp} className="relative hidden h-[22rem] lg:block">
+              {/* back — dark deal card */}
+              <motion.div
+                animate={{ y: [0, -8, 0] }}
+                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute right-0 top-4 w-72 rotate-[6deg] rounded-3xl bg-night-card p-6 shadow-elevated ring-1 ring-white/10"
+              >
+                <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-white/40">Trade Deal</p>
+                <p className="mt-1.5 text-2xl font-bold tracking-tight text-white">TM-2024-0892</p>
+              </motion.div>
+
+              {/* front — lime status card */}
+              <motion.div
+                animate={{ y: [0, -11, 0] }}
+                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
+                className="absolute left-0 top-28 w-80 rotate-[-3deg] rounded-3xl bg-lime p-6 shadow-elevated"
+              >
+                <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-night/50">Status</p>
+                <p className="mt-1.5 text-2xl font-bold tracking-tight text-night">Ready to release</p>
+                <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-night/15">
+                  <motion.div
+                    initial={{ width: 0 }} whileInView={{ width: '75%' }} viewport={{ once: true }}
+                    transition={{ duration: 0.9, ease: 'easeOut', delay: 0.3 }}
+                    className="h-full rounded-full bg-night"
+                  />
+                </div>
+                <p className="mt-3 text-sm font-medium text-night/60">3 of 4 conditions met</p>
+              </motion.div>
             </motion.div>
           </div>
         </motion.section>
@@ -146,33 +165,6 @@ export default function Home() {
         </section>
       </div>
     </main>
-  );
-}
-
-// A tilted, gently-floating trade-document card for the hero visual.
-function FloatingDoc({ className = '', tint, label, ref1, amount, delay }: {
-  className?: string; tint: string; label: string; ref1: string; amount: string; delay: number;
-}) {
-  return (
-    <motion.div
-      animate={{ y: [0, -10, 0] }}
-      transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay }}
-      className={`w-64 rounded-2xl bg-gradient-to-br ${tint} p-5 shadow-elevated ring-1 ring-white/10 ${className}`}
-    >
-      <div className="flex items-center justify-between">
-        <LogoMark size={22} />
-        <div className="h-6 w-8 rounded-md bg-white/15" />
-      </div>
-      <p className="mt-6 text-[0.6rem] font-semibold uppercase tracking-widest text-white/50">{label}</p>
-      <p className="mt-1 font-mono text-xs text-white/70">{ref1}</p>
-      <div className="mt-4 flex items-end justify-between">
-        <div className="space-y-1.5">
-          <div className="h-1.5 w-20 rounded-full bg-white/15" />
-          <div className="h-1.5 w-14 rounded-full bg-white/10" />
-        </div>
-        <span className="tnum text-lg font-bold text-white">{amount}</span>
-      </div>
-    </motion.div>
   );
 }
 
