@@ -25,8 +25,8 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-dvh scroll-smooth bg-paper px-3 py-3 sm:px-5 sm:py-5">
-      <div className="mx-auto max-w-6xl space-y-4">
+    <main className="min-h-dvh scroll-smooth bg-paper px-1.5 py-2 sm:px-2.5 sm:py-3">
+      <div className="mx-auto max-w-7xl space-y-4">
         {/* ── TOP NAV (light) ──────────────────────────────────────────── */}
         <header className="flex items-center justify-between px-2 py-2 sm:px-4 sm:py-3">
           <Link href="/" aria-label="CocoNet home"><Logo size={30} /></Link>
@@ -94,7 +94,7 @@ export default function Home() {
         {/* ── STATEMENT ────────────────────────────────────────────────── */}
         <motion.section
           variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}
-          className="grid gap-6 px-6 py-12 sm:px-10 lg:grid-cols-[auto,1fr] lg:items-center lg:gap-12"
+          className="my-10 grid gap-6 px-6 py-16 sm:my-16 sm:px-10 sm:py-24 lg:grid-cols-[auto,1fr] lg:items-center lg:gap-12"
         >
           <motion.span variants={fadeUp} className="w-fit text-base font-bold uppercase tracking-widest text-slate-500">
             Why CocoNet
