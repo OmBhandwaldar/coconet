@@ -46,7 +46,7 @@ export function AppShell({ active, children }: { active?: RoleKey; children: Rea
   return (
     <div className="min-h-dvh bg-paper">
       {/* Sidebar (desktop) */}
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-white/80 backdrop-blur lg:flex">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-paper lg:flex">
         <div className="flex h-16 items-center px-5">
           <Link href="/" aria-label="CocoNet home"><Logo size={28} /></Link>
         </div>
@@ -79,7 +79,7 @@ export function AppShell({ active, children }: { active?: RoleKey; children: Rea
       {/* Main column */}
       <div className="lg:pl-64">
         {/* Top bar */}
-        <header className="sticky top-0 z-20 border-b border-line bg-white/75 backdrop-blur-md">
+        <header className="sticky top-0 z-20 border-b border-line bg-paper/85 backdrop-blur-md">
           <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-5 sm:px-8">
             <Link href="/" className="lg:hidden" aria-label="CocoNet home"><LogoMark size={26} /></Link>
             <div className="hidden items-center gap-2 lg:flex">
