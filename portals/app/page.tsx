@@ -93,7 +93,7 @@ export default function Home() {
         {/* ── STATEMENT ────────────────────────────────────────────────── */}
         <motion.section
           variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}
-          className="my-10 grid gap-6 px-6 py-16 sm:my-16 sm:px-10 sm:py-24 lg:grid-cols-[auto,1fr] lg:items-center lg:gap-12"
+          className="my-20 grid gap-6 px-6 py-16 sm:my-28 sm:px-10 sm:py-24 lg:grid-cols-[auto,1fr] lg:items-center lg:gap-12"
         >
           <motion.span variants={fadeUp} className="w-fit text-base font-bold uppercase tracking-widest text-slate-500">
             Why CocoNet
@@ -115,7 +115,7 @@ export default function Home() {
         {/* ── STATEMENT 2 (mirrored) ───────────────────────────────────── */}
         <motion.section
           variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}
-          className="my-10 grid gap-6 px-6 py-16 sm:my-16 sm:px-10 sm:py-24 lg:grid-cols-[1fr,auto] lg:items-center lg:gap-12"
+          className="my-20 grid gap-6 px-6 py-16 sm:my-28 sm:px-10 sm:py-24 lg:grid-cols-[1fr,auto] lg:items-center lg:gap-12"
         >
           <motion.h2 variants={fadeUp} className="max-w-2xl text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
             Buyers, suppliers and lenders act on one shared, verified timeline — no reconciling emails, ERP exports or banking portals.
