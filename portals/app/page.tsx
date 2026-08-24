@@ -104,7 +104,7 @@ export default function Home() {
             Why CocoNet
           </motion.span>
           <motion.h2 variants={fadeUp} className="ml-auto max-w-2xl text-right text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
-            Financing, verification and settlement that used to take weeks — collapsed into one shared, tamper-proof timeline.
+            Financing, verification and settlement that used to take weeks, collapsed into one shared, tamper-proof timeline.
           </motion.h2>
         </motion.section>
 
@@ -113,7 +113,7 @@ export default function Home() {
           variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}
           className="grid gap-4 sm:grid-cols-2"
         >
-          <BentoCard tone="lime" title="Get financed before you ship." body="Draw pre-shipment finance against a verified purchase order — production funded, PO locked as security." Icon={IconFinance} />
+          <BentoCard tone="lime" title="Get financed before you ship." body="Draw pre-shipment finance against a verified purchase order, production funded, PO locked as security." Icon={IconFinance} />
           <BentoCard tone="dark" title="Turn approved invoices into instant cash." body="Sell a matched invoice to a lender at a discount, with the earlier loan auto-settled on disbursement." Icon={IconLink} />
         </motion.section>
 
@@ -123,7 +123,7 @@ export default function Home() {
           className="my-20 grid gap-6 px-6 py-16 sm:my-28 sm:px-10 sm:py-24 lg:grid-cols-[1fr,auto] lg:items-center lg:gap-12"
         >
           <motion.h2 variants={fadeUp} className="max-w-2xl text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
-            Buyers, suppliers and lenders act on one shared, verified timeline — no reconciling emails, ERP exports or banking portals.
+            Buyers, suppliers and lenders act on one shared, verified timeline, no reconciling emails, ERP exports or banking portals.
           </motion.h2>
           <motion.span variants={fadeUp} className="w-fit text-base font-bold uppercase tracking-widest text-slate-500 lg:text-right">
             One network

@@ -107,7 +107,7 @@ export default function BuyerPage() {
         <ActionCard
           icon={<IconDoc size={20} />}
           title="Purchase Order"
-          desc="Raise the order to your supplier — type the details or upload a PO to parse them."
+          desc="Raise the order to your supplier, type the details or upload a PO to parse them."
           status={po?.status}
           done={!!po}
         >
@@ -146,7 +146,7 @@ export default function BuyerPage() {
         <ActionCard
           icon={<IconTruck size={20} />}
           title="Goods Receipt (GRN)"
-          desc="Record what actually arrived and passed inspection — enter the quantity or upload the GRN."
+          desc="Record what actually arrived and passed inspection, enter the quantity or upload the GRN."
           status={grn?.status}
           done={!!grn}
         >

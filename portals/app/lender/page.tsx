@@ -141,7 +141,7 @@ export default function LenderPage() {
             <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
           </div>
           {inv?.assignment_status === 'Assigned' && (
-            <ResultBanner tone="special">Invoice assigned to you — you now own the receivable.</ResultBanner>
+            <ResultBanner tone="special">Invoice assigned to you, you now own the receivable.</ResultBanner>
           )}
         </ActionCard>
 
