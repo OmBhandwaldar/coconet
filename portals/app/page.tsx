@@ -44,7 +44,7 @@ export default function Home() {
         {/* ── HERO (dark card) ─────────────────────────────────────────── */}
         <motion.section
           variants={stagger} initial="hidden" animate="show"
-          className="relative overflow-hidden rounded-[2rem] bg-night px-8 py-12 text-white sm:px-16 sm:py-20"
+          className="relative overflow-hidden rounded-[2rem] bg-night px-16 py-12 text-white sm:px-24 sm:py-20"
         >
           {/* ambient glows */}
           <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-lime/10 blur-3xl" />
@@ -53,9 +53,6 @@ export default function Home() {
           <div className="relative grid items-center gap-8 lg:grid-cols-2">
             {/* copy */}
             <div>
-              <motion.span variants={fadeUp} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/80 ring-1 ring-inset ring-white/10">
-                Live demo <span className="h-1.5 w-1.5 rounded-full bg-lime" />
-              </motion.span>
               <motion.h1 variants={fadeUp} className="mt-5 text-4xl font-bold leading-[1.03] tracking-tight sm:text-5xl lg:text-6xl">
                 Move money the<br className="hidden sm:block" /> moment the trade<br className="hidden sm:block" /> is <span className="text-lime">verified</span>
               </motion.h1>
