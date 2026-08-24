@@ -25,8 +25,8 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-dvh scroll-smooth bg-paper px-1 py-1.5 sm:px-1.5 sm:py-2">
-      <div className="mx-auto max-w-[96rem] space-y-3">
+    <main className="min-h-dvh scroll-smooth bg-paper px-2 py-2 sm:px-3 sm:py-3">
+      <div className="mx-auto max-w-[88rem] space-y-4">
         {/* ── TOP NAV (light) ──────────────────────────────────────────── */}
         <header className="flex items-center justify-between px-2 py-2 sm:px-4 sm:py-3">
           <Link href="/" aria-label="CocoNet home"><Logo size={30} /></Link>
