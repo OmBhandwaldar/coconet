@@ -44,7 +44,7 @@ function DealControl({ compact = false }: { compact?: boolean }) {
 
 export function AppShell({ active, children }: { active?: RoleKey; children: ReactNode }) {
   return (
-    <div className="min-h-dvh">
+    <div className="min-h-dvh bg-paper">
       {/* Sidebar (desktop) */}
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 flex-col border-r border-line bg-white/80 backdrop-blur lg:flex">
         <div className="flex h-16 items-center px-5">
@@ -66,14 +66,14 @@ export function AppShell({ active, children }: { active?: RoleKey; children: Rea
             );
           })}
         </nav>
-        <div className="mt-auto p-4">
+        {/* <div className="mt-auto p-4">
           <div className="rounded-xl border border-line bg-surface p-3">
             <p className="text-[0.7rem] font-semibold text-ink">Demo workspace</p>
             <p className="mt-1 text-[0.7rem] leading-relaxed text-slate-500">
               Unauthenticated for the walkthrough. In production these are permissioned, signed-in portals.
             </p>
           </div>
-        </div>
+        </div> */}
       </aside>
 
       {/* Main column */}
