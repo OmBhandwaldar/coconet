@@ -6,7 +6,7 @@ import { Pipeline, type Stage } from '@/components/Pipeline';
 import { ActionButton, ActionCard, Field, inputCls, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { DocUpload } from '@/components/DocUpload';
-import { PageHeader, EmptyDeal, ResultBanner, UploadChip } from '@/components/workspace';
+import { PageHeader, EmptyDeal, ResultBanner, UploadChip, MatchAlert } from '@/components/workspace';
 import { apiCall, apiGet, apiSeq, parseFile } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { escrowUsd } from '@/lib/amounts';
@@ -188,6 +188,7 @@ export default function BuyerPage() {
               run={() => apiCall('PUT', `/api/trade-docs/invoices/${ids.inv}/approve`)} onDone={refresh} />
             <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
           </div>
+          {inv?.status === 'Submitted' && inv.match_result?.passed === false && <MatchAlert reasons={inv.match_result.reasons} />}
         </ActionCard>
 
         {/* Escrow */}

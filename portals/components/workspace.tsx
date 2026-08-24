@@ -37,6 +37,22 @@ export function ResultBanner({ tone, children }: { tone: 'good' | 'bad' | 'speci
   );
 }
 
+// Amber alert surfaced when a 3-way match fails, so the reason is visible
+// instead of a silently-disabled Approve button.
+export function MatchAlert({ reasons }: { reasons?: string[] }) {
+  if (!reasons?.length) return null;
+  return (
+    <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+      className="mt-3 rounded-xl bg-amber-50 px-3.5 py-2.5 text-sm text-amber-800 ring-1 ring-inset ring-amber-200">
+      <p className="font-semibold">3-way match failed</p>
+      <ul className="mt-1 list-inside list-disc text-xs leading-relaxed">
+        {reasons.map((r) => <li key={r}>{r}</li>)}
+      </ul>
+      <p className="mt-1.5 text-xs text-amber-700">Start a new deal and raise the invoice within the delivered quantity &amp; PO value.</p>
+    </motion.div>
+  );
+}
+
 export function UploadChip({ label, busy, onFile }: { label: string; busy?: boolean; onFile: (f: File) => void }) {
   return (
     <label className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-brand-300 px-3 py-1.5 text-xs font-semibold text-brand-600 transition hover:bg-brand-50 ${busy ? 'cursor-wait opacity-60' : ''}`}>

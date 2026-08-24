@@ -27,7 +27,7 @@ export interface Invoice {
   status: string;
   assignment_status?: string;
   assigned_to?: string;
-  match_result?: { passed: boolean };
+  match_result?: { passed: boolean; reasons?: string[] };
   due_date?: string;
   doc_hash?: string;
   created_at?: string;

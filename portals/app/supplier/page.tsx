@@ -7,7 +7,7 @@ import { ActionButton, ActionCard, inrUsd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { DocUpload } from '@/components/DocUpload';
 import { ParseImport } from '@/components/ParseImport';
-import { PageHeader, EmptyDeal, ResultBanner } from '@/components/workspace';
+import { PageHeader, EmptyDeal, ResultBanner, MatchAlert } from '@/components/workspace';
 import { apiCall, apiGet, apiSeq } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT, discGross, preShipAmount } from '@/lib/amounts';
@@ -128,6 +128,7 @@ export default function SupplierPage() {
                 onDone={refresh} />
               <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
             </div>
+            {inv?.status === 'Submitted' && inv.match_result?.passed === false && <MatchAlert reasons={inv.match_result.reasons} />}
           </div>
         </ActionCard>
 
