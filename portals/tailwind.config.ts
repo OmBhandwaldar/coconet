@@ -40,10 +40,10 @@ const config: Config = {
         line: '#E4EAF2',
         // Landing accents (ofspace-style dark + lime).
         lime: {
-          300: '#DDF27A',
-          DEFAULT: '#CDEB45',
-          500: '#CDEB45',
-          600: '#B6D62F',
+          300: '#E0F29E',
+          DEFAULT: '#CFEB6E',
+          500: '#CFEB6E',
+          600: '#BBDC4E',
         },
         night: {
           DEFAULT: '#141615',
