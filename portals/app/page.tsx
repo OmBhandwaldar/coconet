@@ -3,7 +3,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { motion } from 'motion/react';
-import { LogoMark } from '@/components/Logo';
+import { Logo, LogoMark } from '@/components/Logo';
 import { fadeUp, stagger } from '@/lib/motion';
 import { ensureOrgs, useDeal } from '@/lib/deal';
 import {
@@ -25,31 +25,39 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-dvh bg-paper px-3 py-3 sm:px-5 sm:py-5">
+    <main className="min-h-dvh scroll-smooth bg-paper px-3 py-3 sm:px-5 sm:py-5">
       <div className="mx-auto max-w-6xl space-y-4">
+        {/* ── TOP NAV (light) ──────────────────────────────────────────── */}
+        <header className="flex items-center justify-between px-2 py-2 sm:px-4 sm:py-3">
+          <Link href="/" aria-label="CocoNet home"><Logo size={30} /></Link>
+          <nav className="flex items-center gap-2 sm:gap-3">
+            <a href="#workspaces" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition hover:text-ink">
+              Workspaces
+            </a>
+            <button onClick={startAndOpen} disabled={busy}
+              className="inline-flex items-center gap-2 rounded-full bg-lime px-5 py-2.5 text-sm font-bold text-night transition hover:bg-lime-600 disabled:opacity-70">
+              {busy ? <IconClock size={15} className="animate-spin" /> : <IconPlus size={15} />}
+              {busy ? 'Starting…' : 'Start a deal'}
+            </button>
+          </nav>
+        </header>
+
         {/* ── HERO (dark card) ─────────────────────────────────────────── */}
         <motion.section
           variants={stagger} initial="hidden" animate="show"
-          className="relative overflow-hidden rounded-[2rem] bg-night px-6 py-7 text-white sm:px-10 sm:py-10"
+          className="relative overflow-hidden rounded-[2rem] bg-night px-6 py-9 text-white sm:px-10 sm:py-12"
         >
           {/* ambient glows */}
           <div className="pointer-events-none absolute -right-24 -top-24 h-80 w-80 rounded-full bg-lime/10 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-32 left-1/3 h-80 w-80 rounded-full bg-brand-500/10 blur-3xl" />
 
-          {/* top bar */}
-          <motion.div variants={fadeUp} className="relative flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 text-lg font-bold tracking-tight">
-              <LogoMark size={26} /> <span className="text-white">CocoNet</span>
-            </span>
-            <span className="inline-flex items-center gap-2 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white/90 ring-1 ring-inset ring-white/10">
-              Live demo <span className="h-1.5 w-1.5 rounded-full bg-lime" />
-            </span>
-          </motion.div>
-
-          <div className="relative mt-10 grid items-center gap-8 lg:mt-14 lg:grid-cols-2">
+          <div className="relative grid items-center gap-8 lg:grid-cols-2">
             {/* copy */}
             <div>
-              <motion.h1 variants={fadeUp} className="text-4xl font-bold leading-[1.03] tracking-tight sm:text-5xl lg:text-6xl">
+              <motion.span variants={fadeUp} className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-white/80 ring-1 ring-inset ring-white/10">
+                Live demo <span className="h-1.5 w-1.5 rounded-full bg-lime" />
+              </motion.span>
+              <motion.h1 variants={fadeUp} className="mt-5 text-4xl font-bold leading-[1.03] tracking-tight sm:text-5xl lg:text-6xl">
                 Move money the<br className="hidden sm:block" /> moment the trade<br className="hidden sm:block" /> is <span className="text-lime">verified</span>
               </motion.h1>
               <motion.p variants={fadeUp} className="mt-5 max-w-md text-[0.95rem] leading-relaxed text-white/60">
@@ -107,8 +115,9 @@ export default function Home() {
 
         {/* ── ROLES ────────────────────────────────────────────────────── */}
         <motion.section
+          id="workspaces"
           variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}
-          className="rounded-[2rem] bg-white px-6 py-10 sm:px-10"
+          className="scroll-mt-6 rounded-[2rem] bg-white px-6 py-10 sm:px-10"
         >
           <motion.div variants={fadeUp} className="mb-6 flex items-center gap-3">
             <span className="inline-flex items-center rounded-full border border-line px-3 py-1 text-[0.65rem] font-bold uppercase tracking-widest text-slate-500">Workspaces</span>
