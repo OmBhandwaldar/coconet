@@ -38,6 +38,19 @@ const config: Config = {
           sunken: '#EBF0F7',
         },
         line: '#E4EAF2',
+        // Landing accents (ofspace-style dark + lime).
+        lime: {
+          300: '#DDF27A',
+          DEFAULT: '#CDEB45',
+          500: '#CDEB45',
+          600: '#B6D62F',
+        },
+        night: {
+          DEFAULT: '#141615',
+          soft: '#1E211F',
+          card: '#212423',
+        },
+        paper: '#F1F2ED',
       },
       fontFamily: {
         sans: ['var(--font-plex-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
