@@ -99,7 +99,7 @@ export default function Home() {
           <motion.span variants={fadeUp} className="w-fit text-base font-bold uppercase tracking-widest text-slate-500">
             Why CocoNet
           </motion.span>
-          <motion.h2 variants={fadeUp} className="max-w-2xl text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
+          <motion.h2 variants={fadeUp} className="ml-auto max-w-2xl text-right text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
             Financing, verification and settlement that used to take weeks — collapsed into one shared, tamper-proof timeline.
           </motion.h2>
         </motion.section>
