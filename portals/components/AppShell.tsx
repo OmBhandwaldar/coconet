@@ -13,7 +13,7 @@ const ROLES: { href: string; label: RoleKey; Icon: typeof IconBuyer; accent: str
   { href: '/lender', label: 'Lender', Icon: IconLender, accent: 'text-accent-dark bg-accent-50 ring-accent-100', dot: 'bg-accent-400' },
 ];
 
-function DealControl({ compact = false }: { compact?: boolean }) {
+export function DealControl({ compact = false }: { compact?: boolean }) {
   const { code, setDeal, newCode } = useDeal();
   const [busy, setBusy] = useState(false);
   async function startNew() {
@@ -78,17 +78,10 @@ export function AppShell({ active, children }: { active?: RoleKey; children: Rea
 
       {/* Main column */}
       <div className="lg:pl-64">
-        {/* Top bar */}
-        <header className="sticky top-0 z-20 border-b border-line bg-paper/85 backdrop-blur-md">
-          <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-5 sm:px-8">
-            <Link href="/" className="lg:hidden" aria-label="CocoNet home"><LogoMark size={26} /></Link>
-            <div className="hidden items-center gap-2 lg:flex">
-              {active && <span className="text-sm font-semibold text-ink">{active} workspace</span>}
-            </div>
-            <DealControl compact />
-          </div>
-          {/* Mobile role nav */}
-          <nav className="flex gap-1 overflow-x-auto border-t border-line px-3 py-2 lg:hidden">
+        {/* Mobile top bar (logo + role tabs) — sidebar is desktop-only */}
+        <div className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-paper/85 px-4 py-3 backdrop-blur-md lg:hidden">
+          <Link href="/" aria-label="CocoNet home"><LogoMark size={24} /></Link>
+          <nav className="flex gap-1 overflow-x-auto">
             {ROLES.map(({ href, label, Icon, accent }) => {
               const on = active === label;
               return (
@@ -99,7 +92,7 @@ export function AppShell({ active, children }: { active?: RoleKey; children: Rea
               );
             })}
           </nav>
-        </header>
+        </div>
 
         <main className="mx-auto max-w-5xl px-5 py-7 sm:px-8">{children}</main>
       </div>

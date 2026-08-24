@@ -3,12 +3,17 @@ import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { IconArrowRight, IconCheck, IconScan } from '@/components/icons';
+import { DealControl } from '@/components/AppShell';
 
 export function PageHeader({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mb-7">
-      <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">{title}</h1>
-      <p className="mt-2 max-w-2xl text-[0.95rem] leading-relaxed text-slate-500">{subtitle}</p>
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+      className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+      <div>
+        <h1 className="text-3xl font-bold tracking-tight text-ink sm:text-4xl">{title}</h1>
+        <p className="mt-2 max-w-2xl text-[0.95rem] leading-relaxed text-slate-500">{subtitle}</p>
+      </div>
+      <div className="shrink-0"><DealControl compact /></div>
     </motion.div>
   );
 }
