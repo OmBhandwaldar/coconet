@@ -1,5 +1,6 @@
 'use client';
-import { ReactNode, useState } from 'react';
+import { ReactNode, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { inrUsd } from './ui';
 import { docUrl, isRealHash } from '@/lib/api';
@@ -145,7 +146,46 @@ type Doc =
 
 export function DocButton({ doc, label }: { doc: Doc | null; label?: string }) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  // Close on Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && setOpen(false);
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
   if (!doc?.data) return null;
+
+  // Rendered through a portal to <body> so `position: fixed` escapes any
+  // transformed ancestor (motion cards apply transforms).
+  const overlay = (
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 16, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 8, scale: 0.98 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+            className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-6 shadow-elevated"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-3 flex justify-end">
+              <button onClick={() => setOpen(false)} aria-label="Close" className="rounded-lg p-1 text-slate-400 transition hover:bg-surface hover:text-slate-700">✕</button>
+            </div>
+            {doc.kind === 'PO' && <POView po={doc.data} />}
+            {doc.kind === 'INVOICE' && <InvoiceView inv={doc.data} />}
+            {doc.kind === 'GRN' && <GRNView grn={doc.data} />}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
 
   return (
     <>
@@ -153,31 +193,7 @@ export function DocButton({ doc, label }: { doc: Doc | null; label?: string }) {
         className="inline-flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-slate-600 ring-1 ring-inset ring-line transition hover:bg-surface">
         <IconDoc size={16} /> {label ?? 'View Document'}
       </button>
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
-          >
-            <motion.div
-              initial={{ opacity: 0, y: 16, scale: 0.98 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 8, scale: 0.98 }}
-              transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-              className="max-h-[85vh] w-full max-w-lg overflow-auto rounded-2xl bg-white p-6 shadow-elevated"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="mb-3 flex justify-end">
-                <button onClick={() => setOpen(false)} aria-label="Close" className="rounded-lg p-1 text-slate-400 transition hover:bg-surface hover:text-slate-700">✕</button>
-              </div>
-              {doc.kind === 'PO' && <POView po={doc.data} />}
-              {doc.kind === 'INVOICE' && <InvoiceView inv={doc.data} />}
-              {doc.kind === 'GRN' && <GRNView grn={doc.data} />}
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {mounted && createPortal(overlay, document.body)}
     </>
   );
 }

@@ -1,5 +1,6 @@
 'use client';
-import { ChangeEvent, ReactNode, useState } from 'react';
+import { ChangeEvent, ReactNode, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ApiResult, parseFile, ParseResult } from '@/lib/api';
 import { inputCls } from '@/components/ui';
 import { IconScan } from '@/components/icons';
@@ -27,6 +28,8 @@ export function ParseImport({
   const [dueDate, setDueDate] = useState(defaults.due_date ?? '2024-12-31');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
 
   async function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
@@ -60,8 +63,8 @@ export function ParseImport({
       {parsing && <span className="ml-2 text-xs text-slate-400">reading document…</span>}
       {err && !result && <p className="mt-1 text-xs text-rose-600">{err}</p>}
 
-      {result && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4" onClick={() => setResult(null)}>
+      {mounted && result && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-ink/40 p-4 backdrop-blur-sm" onClick={() => setResult(null)}>
           <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-elevated" onClick={(e) => e.stopPropagation()}>
             <div className="mb-1 flex items-center justify-between">
               <h3 className="text-sm font-bold text-slate-800">Confirm extracted details</h3>
@@ -91,7 +94,8 @@ export function ParseImport({
               {busy ? 'Submitting…' : 'Confirm & Create'}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
