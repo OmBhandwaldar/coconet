@@ -7,8 +7,7 @@ import { Logo, LogoMark } from '@/components/Logo';
 import { fadeUp, stagger } from '@/lib/motion';
 import { ensureOrgs, useDeal } from '@/lib/deal';
 import {
-  IconBuyer, IconSupplier, IconLender, IconArrowRight, IconPlus, IconClock,
-  IconFinance, IconLink,
+  IconArrowRight, IconPlus, IconClock, IconFinance, IconLink,
 } from '@/components/icons';
 
 export default function Home() {
@@ -31,9 +30,9 @@ export default function Home() {
         <header className="flex items-center justify-between px-2 py-2 sm:px-4 sm:py-3">
           <Link href="/" aria-label="CocoNet home"><Logo size={30} /></Link>
           <nav className="flex items-center gap-2 sm:gap-3">
-            <a href="#workspaces" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition hover:text-ink">
+            <Link href="/buyer" className="rounded-full px-4 py-2 text-sm font-semibold text-slate-600 transition hover:text-ink">
               Workspaces
-            </a>
+            </Link>
             <button onClick={startAndOpen} disabled={busy}
               className="inline-flex items-center gap-2 rounded-full bg-lime px-5 py-2.5 text-sm font-bold text-night transition hover:bg-lime-600 disabled:opacity-70">
               {busy ? <IconClock size={15} className="animate-spin" /> : <IconPlus size={15} />}
@@ -113,21 +112,17 @@ export default function Home() {
           <BentoCard tone="dark" title="Turn approved invoices into instant cash." body="Sell a matched invoice to a lender at a discount, with the earlier loan auto-settled on disbursement." Icon={IconLink} />
         </motion.section>
 
-        {/* ── ROLES ────────────────────────────────────────────────────── */}
+        {/* ── STATEMENT 2 (mirrored) ───────────────────────────────────── */}
         <motion.section
-          id="workspaces"
           variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}
-          className="scroll-mt-6 rounded-[2rem] bg-white px-6 py-10 sm:px-10"
+          className="my-10 grid gap-6 px-6 py-16 sm:my-16 sm:px-10 sm:py-24 lg:grid-cols-[1fr,auto] lg:items-center lg:gap-12"
         >
-          <motion.div variants={fadeUp} className="mb-6 flex items-center gap-3">
-            <span className="inline-flex items-center rounded-full border border-line px-3 py-1 text-[0.65rem] font-bold uppercase tracking-widest text-slate-500">Workspaces</span>
-            <p className="text-sm text-slate-500">Open a role and drive the deal — best across three tabs.</p>
-          </motion.div>
-          <div className="grid gap-4 sm:grid-cols-3">
-            <RoleCard href="/buyer" label="Buyer" Icon={IconBuyer} desc="Issue the order, confirm delivery, approve the invoice, fund & release escrow." />
-            <RoleCard href="/supplier" label="Supplier" Icon={IconSupplier} desc="Acknowledge the order, draw finance, raise the invoice, discount it for early cash." />
-            <RoleCard href="/lender" label="Lender" Icon={IconLender} desc="Underwrite finance, quote your terms, discount invoices, collect from escrow." />
-          </div>
+          <motion.h2 variants={fadeUp} className="max-w-2xl text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
+            Buyers, suppliers and lenders act on one shared, verified timeline — no reconciling emails, ERP exports or banking portals.
+          </motion.h2>
+          <motion.span variants={fadeUp} className="w-fit text-base font-bold uppercase tracking-widest text-slate-500 lg:text-right">
+            One network
+          </motion.span>
         </motion.section>
 
         {/* ── CTA + note ───────────────────────────────────────────────── */}
@@ -204,22 +199,3 @@ function BentoCard({ tone, title, body, Icon }: {
   );
 }
 
-function RoleCard({ href, label, Icon, desc }: { href: string; label: string; Icon: typeof IconBuyer; desc: string }) {
-  return (
-    <motion.div variants={fadeUp}>
-      <Link
-        href={href}
-        className="group flex h-full flex-col rounded-2xl border border-line bg-surface p-6 transition-all hover:-translate-y-1 hover:border-brand-200 hover:shadow-elevated"
-      >
-        <span className="inline-flex h-11 w-11 items-center justify-center rounded-xl bg-white text-brand-600 ring-1 ring-inset ring-line">
-          <Icon size={22} />
-        </span>
-        <h3 className="mt-4 text-lg font-semibold text-ink">{label}</h3>
-        <p className="mt-2 flex-1 text-sm leading-relaxed text-slate-500">{desc}</p>
-        <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-brand-600">
-          Open <IconArrowRight size={16} className="transition-transform group-hover:translate-x-0.5" />
-        </span>
-      </Link>
-    </motion.div>
-  );
-}
