@@ -77,22 +77,22 @@ export default function Home() {
             </div>
 
             {/* floating status cards */}
-            <motion.div variants={fadeUp} className="relative hidden h-[22rem] lg:block">
-              {/* back — dark deal card */}
+            <motion.div variants={fadeUp} className="relative mx-auto hidden h-[24rem] w-full max-w-md lg:block">
+              {/* back — dark deal card (upper-right) */}
               <motion.div
                 animate={{ y: [0, -8, 0] }}
                 transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute right-0 top-4 w-72 rotate-[6deg] rounded-3xl bg-night-card p-6 shadow-elevated ring-1 ring-white/10"
+                className="absolute right-0 top-2 w-72 rotate-[8deg] rounded-3xl bg-night-card px-7 py-8 shadow-elevated ring-1 ring-white/10"
               >
                 <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-white/40">Trade Deal</p>
                 <p className="mt-1.5 text-2xl font-bold tracking-tight text-white">TM-2024-0892</p>
               </motion.div>
 
-              {/* front — lime status card */}
+              {/* front — lime status card (lower-left, overlapping) */}
               <motion.div
                 animate={{ y: [0, -11, 0] }}
                 transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                className="absolute left-0 top-28 w-80 rotate-[-3deg] rounded-3xl bg-lime p-6 shadow-elevated"
+                className="absolute left-0 top-40 w-80 rotate-[-6deg] rounded-3xl bg-lime px-7 py-8 shadow-elevated"
               >
                 <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-night/50">Status</p>
                 <p className="mt-1.5 text-2xl font-bold tracking-tight text-night">Ready to release</p>
