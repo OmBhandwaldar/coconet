@@ -136,7 +136,7 @@ export default function Home() {
           <div className="relative flex flex-col items-start justify-between gap-6 sm:flex-row sm:items-center">
             <div>
               <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">See the whole trade move end to end.</h2>
-              <p className="mt-2 max-w-md text-sm text-white/55">Spin up a deal and walk it from purchase order to cross-chain escrow release in minutes.</p>
+              <p className="mt-2 max-w-md text-sm text-white/55">Spin up a deal and walk it from purchase order to release.</p>
             </div>
             <button onClick={startAndOpen} disabled={busy}
               className="inline-flex shrink-0 items-center gap-2 rounded-full bg-lime px-6 py-3 text-sm font-bold text-night transition hover:bg-lime-600 disabled:opacity-70">
@@ -144,10 +144,10 @@ export default function Home() {
               {busy ? 'Starting…' : 'Start a deal'}
             </button>
           </div>
-          <p className="relative mt-8 border-t border-white/10 pt-5 text-xs leading-relaxed text-white/45">
+          {/* <p className="relative mt-8 border-t border-white/10 pt-5 text-xs leading-relaxed text-white/45">
             Demo mode — the role workspaces are shown without login so you can see every side of the deal.
             In production they are authenticated, permissioned portals.
-          </p>
+          </p> */}
         </section>
       </div>
     </main>

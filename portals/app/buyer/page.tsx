@@ -113,7 +113,7 @@ export default function BuyerPage() {
         >
           {po ? (
             <p className="text-sm text-slate-600">
-              <span className="font-semibold text-ink">{po.quantity?.toLocaleString('en-IN')} × {po.item_description}</span> — {inrUsd(po.gross_value)}.
+              <span className="font-semibold text-ink">{po.quantity?.toLocaleString('en-IN')} × {po.item_description}</span> = {inrUsd(po.gross_value)}.
             </p>
           ) : (
             <div className="space-y-3">
