@@ -94,9 +94,9 @@ export default function Home() {
         {/* ── STATEMENT ────────────────────────────────────────────────── */}
         <motion.section
           variants={stagger} initial="hidden" whileInView="show" viewport={{ once: true, margin: '-80px' }}
-          className="grid gap-6 rounded-[2rem] bg-white px-6 py-10 sm:px-10 lg:grid-cols-[auto,1fr] lg:items-center"
+          className="grid gap-6 px-6 py-12 sm:px-10 lg:grid-cols-[auto,1fr] lg:items-center lg:gap-12"
         >
-          <motion.span variants={fadeUp} className="inline-flex w-fit items-center rounded-full border border-line px-3 py-1 text-[0.65rem] font-bold uppercase tracking-widest text-slate-500">
+          <motion.span variants={fadeUp} className="w-fit text-base font-bold uppercase tracking-widest text-slate-500">
             Why CocoNet
           </motion.span>
           <motion.h2 variants={fadeUp} className="max-w-2xl text-3xl font-bold leading-tight tracking-tight text-ink sm:text-4xl">
