@@ -60,7 +60,7 @@ export default function Home() {
                 Move money the<br className="hidden sm:block" /> moment the trade<br className="hidden sm:block" /> is <span className="text-lime">verified</span>
               </motion.h1>
               <motion.p variants={fadeUp} className="mt-5 max-w-md text-[0.95rem] leading-relaxed text-white/60">
-                One permissioned chain for buyers, suppliers and lenders — provenance, invoice
+                One permissioned chain for buyers, suppliers and lenders - provenance, invoice
                 discounting and programmable escrow settlement, all in one place.
               </motion.p>
               <motion.div variants={fadeUp} className="mt-8 flex flex-wrap items-center gap-3">
@@ -77,34 +77,23 @@ export default function Home() {
             </div>
 
             {/* floating status cards */}
-            <motion.div variants={fadeUp} className="relative mx-auto hidden h-[24rem] w-full max-w-md lg:block">
-              {/* back — dark deal card (upper-right) */}
-              <motion.div
-                animate={{ y: [0, -8, 0] }}
-                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut' }}
-                className="absolute right-0 top-2 w-72 rotate-[8deg] rounded-3xl bg-night-card px-7 py-8 shadow-elevated ring-1 ring-white/10"
-              >
-                <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-white/40">Trade Deal</p>
-                <p className="mt-1.5 text-2xl font-bold tracking-tight text-white">TM-2024-0892</p>
-              </motion.div>
-
-              {/* front — lime status card (lower-left, overlapping) */}
-              <motion.div
-                animate={{ y: [0, -11, 0] }}
-                transition={{ duration: 6, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
-                className="absolute left-0 top-40 w-80 rotate-[-6deg] rounded-3xl bg-lime px-7 py-8 shadow-elevated"
-              >
-                <p className="text-[0.65rem] font-semibold uppercase tracking-widest text-night/50">Status</p>
-                <p className="mt-1.5 text-2xl font-bold tracking-tight text-night">Ready to release</p>
-                <div className="mt-5 h-2 w-full overflow-hidden rounded-full bg-night/15">
-                  <motion.div
-                    initial={{ width: 0 }} whileInView={{ width: '75%' }} viewport={{ once: true }}
-                    transition={{ duration: 0.9, ease: 'easeOut', delay: 0.3 }}
-                    className="h-full rounded-full bg-night"
-                  />
+            <motion.div variants={fadeUp} className="relative hidden h-[22rem] lg:block">
+              {/* back — dark deal card */}
+              <div className="absolute right-4 top-10 w-64 -rotate-6 rounded-2xl border border-white/10 bg-gradient-to-br from-[#2A2C26] to-[#17181A] p-5 shadow-2xl">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-white/40">Trade deal</p>
+                <p className="mt-1 text-sm font-bold text-white">TM-2024-0892</p>
+                <p className="mt-4 text-2xl font-extrabold text-lime">₹90,00,000</p>
+                <p className="mt-3 text-xs text-white/40">Tata Motors &middot; Invoice</p>
+              </div>
+              {/* front — lime status card */}
+              <div className="absolute right-16 top-28 w-64 rotate-3 rounded-2xl border border-black/5 bg-lime p-5 text-night shadow-xl">
+                <p className="text-[10px] font-semibold uppercase tracking-wider opacity-70">Status</p>
+                <p className="mt-1 text-sm font-bold">Ready to release</p>
+                <div className="mt-4 h-1.5 w-full rounded-full bg-black/10">
+                  <div className="h-full w-3/4 rounded-full bg-black/70" />
                 </div>
-                <p className="mt-3 text-sm font-medium text-night/60">3 of 4 conditions met</p>
-              </motion.div>
+                <p className="mt-3 text-xs opacity-70">3 of 4 conditions met</p>
+              </div>
             </motion.div>
           </div>
         </motion.section>
