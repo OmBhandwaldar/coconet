@@ -9,7 +9,6 @@ import { IconActivity, IconLink, IconShield } from '@/components/icons';
 import type { ActivityEntry } from '@/lib/types';
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB');
-const shortTx = (tx: string | null) => (!tx ? '—' : tx.length > 20 ? `${tx.slice(0, 10)}…${tx.slice(-6)}` : tx);
 
 export default function ActivityPage() {
   const { code } = useDeal();
@@ -90,7 +89,7 @@ function Row({ e }: { e: ActivityEntry }) {
           {e.deal && <span className="text-slate-400">· {e.deal}</span>}
         </div>
         <p className="mt-1 text-[0.7rem] text-slate-400">
-          tx <span className="font-mono text-slate-500">{shortTx(e.tx)}</span>
+          tx <span className="break-all font-mono text-slate-500">{e.tx ?? '—'}</span>
           {e.block != null && <> · block {e.block}</>}
         </p>
       </div>
