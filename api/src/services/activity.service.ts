@@ -1,6 +1,8 @@
 // In-memory activity log of on-chain events (Fabric + Polygon). Rebuilt from the
 // chains on startup (see activity-feed.service.ts) — no external store needed.
 
+export type Actor = 'Buyer' | 'Supplier' | 'Lender' | 'Platform' | 'System';
+
 export interface ActivityEntry {
   seq: number;
   ts: string; // ISO — receipt time (block-level time isn't carried on the event)
@@ -8,11 +10,29 @@ export interface ActivityEntry {
   source: string; // chaincode name or 'escrow'
   event: string;
   label: string;
+  actor: Actor | null; // business role that performs this action (derived — MVP has no per-role auth)
   entity_id: string | null;
   deal: string | null;
   tx: string | null;
   block: number | null;
 }
+
+// Which business role performs each action in the trade flow. (Derived: the API
+// signs every tx as one admin identity today, so this reflects the workflow, not
+// a per-user signature. Real RBAC would record the actual signing org.)
+export const ACTORS: Record<string, Actor> = {
+  OrganizationCreated: 'Platform', OrganizationStatusUpdated: 'Platform', RoleAssigned: 'Platform', RiskTierAssigned: 'Platform',
+  POCreated: 'Buyer', POAmended: 'Buyer', POAcknowledged: 'Supplier',
+  GRNCreated: 'Buyer', GRNAccepted: 'Buyer',
+  InvoiceSubmitted: 'Supplier', InvoiceRevised: 'Supplier',
+  InvoiceMatched: 'System', InvoiceMatchFailed: 'System',
+  InvoiceApproved: 'Buyer', InvoiceRejected: 'Buyer', InvoiceDisputed: 'Buyer',
+  InvoiceAssigned: 'Lender', LenderAssigned: 'Lender',
+  FinanceRequestCreated: 'Supplier', FinanceAccepted: 'Supplier',
+  FinanceEligibilityPassed: 'Lender', FinanceEligibilityFailed: 'Lender',
+  FinanceOffered: 'Lender', FinanceApproved: 'Lender', FinanceDisbursed: 'Lender', FinanceRepaid: 'System',
+  EscrowInstructionCreated: 'Buyer', EscrowFunded: 'Buyer', FundsRefunded: 'Buyer', FundsReleased: 'System',
+};
 
 // Event name → human label. Unknown events fall back to their raw name.
 export const LABELS: Record<string, string> = {
@@ -80,8 +100,8 @@ export function entityFromFabricPayload(p: Record<string, unknown>): string | nu
   return typeof v === 'string' ? v : null;
 }
 
-export function record(e: Omit<ActivityEntry, 'seq'>): ActivityEntry {
-  const entry: ActivityEntry = { ...e, seq: ++seq };
+export function record(e: Omit<ActivityEntry, 'seq' | 'actor'>): ActivityEntry {
+  const entry: ActivityEntry = { ...e, actor: ACTORS[e.event] ?? null, seq: ++seq };
   buffer.push(entry);
   if (buffer.length > MAX) buffer.shift();
   return entry;
