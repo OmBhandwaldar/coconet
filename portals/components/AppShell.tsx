@@ -3,10 +3,11 @@ import Link from 'next/link';
 import { useState, type ReactNode } from 'react';
 import { motion } from 'motion/react';
 import { Logo, LogoMark } from '@/components/Logo';
-import { IconBuyer, IconSupplier, IconLender, IconPlus, IconClock } from '@/components/icons';
+import { IconBuyer, IconSupplier, IconLender, IconPlus, IconClock, IconActivity } from '@/components/icons';
 import { ensureOrgs, useDeal } from '@/lib/deal';
 
 type RoleKey = 'Buyer' | 'Supplier' | 'Lender';
+type NavKey = RoleKey | 'Activity';
 const ROLES: { href: string; label: RoleKey; Icon: typeof IconBuyer; accent: string; dot: string }[] = [
   { href: '/buyer', label: 'Buyer', Icon: IconBuyer, accent: 'text-brand-700 bg-brand-50 ring-brand-100', dot: 'bg-brand-500' },
   { href: '/supplier', label: 'Supplier', Icon: IconSupplier, accent: 'text-emerald-700 bg-emerald-50 ring-emerald-100', dot: 'bg-emerald-500' },
@@ -42,7 +43,7 @@ export function DealControl({ compact = false }: { compact?: boolean }) {
   );
 }
 
-export function AppShell({ active, children }: { active?: RoleKey; children: ReactNode }) {
+export function AppShell({ active, children }: { active?: NavKey; children: ReactNode }) {
   return (
     <div className="min-h-dvh bg-paper">
       {/* Sidebar (desktop) */}
@@ -65,6 +66,14 @@ export function AppShell({ active, children }: { active?: RoleKey; children: Rea
               </Link>
             );
           })}
+          <p className="px-2 pb-1 pt-4 text-[0.65rem] font-semibold uppercase tracking-widest text-slate-400">Ledger</p>
+          <Link href="/activity"
+            className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition ${
+              active === 'Activity' ? 'bg-ink text-white' : 'text-slate-600 hover:bg-surface'
+            }`}>
+            <IconActivity size={18} />
+            Activity
+          </Link>
         </nav>
         {/* <div className="mt-auto p-4">
           <div className="rounded-xl border border-line bg-surface p-3">
@@ -91,6 +100,10 @@ export function AppShell({ active, children }: { active?: RoleKey; children: Rea
                 </Link>
               );
             })}
+            <Link href="/activity"
+              className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold ${active === 'Activity' ? 'bg-ink text-white' : 'text-slate-500'}`}>
+              <IconActivity size={15} /> Activity
+            </Link>
           </nav>
         </div>
 

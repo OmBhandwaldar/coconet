@@ -65,6 +65,9 @@ export const IconLink = (p: IconProps) => (
 export const IconFinance = (p: IconProps) => (
   <svg {...base(p)}><path d="M3 3v18h18" /><path d="m7 14 3-3 3 3 5-6" /></svg>
 );
+export const IconActivity = (p: IconProps) => (
+  <svg {...base(p)}><path d="M3 12h4l3 8 4-16 3 8h4" /></svg>
+);
 export const IconReceipt = (p: IconProps) => (
   <svg {...base(p)}><path d="M5 21V4a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v17l-3-2-3 2-3-2-3 2Z" /><path d="M8 7h8M8 11h8M8 15h5" /></svg>
 );

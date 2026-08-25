@@ -81,3 +81,16 @@ export interface Settlement {
   settled_amount: number;
   net_to_supplier: number;
 }
+
+export interface ActivityEntry {
+  seq: number;
+  ts: string;
+  chain: 'fabric' | 'polygon';
+  source: string;
+  event: string;
+  label: string;
+  entity_id: string | null;
+  deal: string | null;
+  tx: string | null;
+  block: number | null;
+}

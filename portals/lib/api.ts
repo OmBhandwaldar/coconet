@@ -41,6 +41,13 @@ export async function apiSeq(calls: Array<() => Promise<ApiResult>>): Promise<Ap
 
 export const API_BASE = BASE;
 
+// On-chain activity feed. Pass a deal code to scope to one deal; omit for all deals.
+export async function fetchActivity(deal?: string): Promise<{ entries: import('./types').ActivityEntry[]; lastSeq: number }> {
+  const q = deal ? `?deal=${encodeURIComponent(deal)}&limit=300` : '?limit=300';
+  const r = await apiCall<{ entries: import('./types').ActivityEntry[]; lastSeq: number }>('GET', `/api/activity${q}`);
+  return r.ok && r.data ? r.data : { entries: [], lastSeq: 0 };
+}
+
 // Upload a real document file → returns its on-chain SHA-256 fingerprint (or null).
 export async function uploadFile(file: File): Promise<string | null> {
   const fd = new FormData();
