@@ -1,5 +1,5 @@
 import * as grpc from '@grpc/grpc-js';
-import { connect, Contract, Gateway, Identity, Signer, signers } from '@hyperledger/fabric-gateway';
+import { connect, Contract, Gateway, Identity, Signer, signers, type ChaincodeEventsOptions } from '@hyperledger/fabric-gateway';
 import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -58,12 +58,13 @@ export function getContract(chaincodeName: string): Contract {
   return network.getContract(chaincodeName);
 }
 
-// Async-iterable stream of chaincode events (used by the bridge). Starts from the
-// next block, so only events emitted after subscription are delivered.
-export async function getChaincodeEvents(chaincodeName: string) {
+// Async-iterable stream of chaincode events. Without options it starts from the
+// next block (bridge use); pass { startBlock: 0n } to replay full history then
+// stay live (activity feed use).
+export async function getChaincodeEvents(chaincodeName: string, options?: ChaincodeEventsOptions) {
   if (!gateway) throw new Error('Fabric Gateway not connected. Call connectGateway() first.');
   const network = gateway.getNetwork(env.FABRIC_CHANNEL_NAME);
-  return network.getChaincodeEvents(chaincodeName);
+  return network.getChaincodeEvents(chaincodeName, options);
 }
 
 export async function disconnectGateway(): Promise<void> {

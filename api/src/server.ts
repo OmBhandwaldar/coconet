@@ -4,6 +4,7 @@ import app from './app.js';
 import { connectGateway, disconnectGateway } from './fabric/gateway.js';
 import { connectPolygon } from './polygon/provider.js';
 import { startBridge } from './services/bridge.service.js';
+import { startActivityFeed } from './services/activity-feed.service.js';
 
 async function tryConnectFabric(): Promise<boolean> {
   try {
@@ -42,6 +43,15 @@ async function bootstrap(): Promise<void> {
       startBridge();
     } catch (err) {
       logger.warn({ err: (err as Error).message }, 'Bridge failed to start');
+    }
+  }
+
+  // Activity feed needs Fabric for chaincode events; Polygon events included when available.
+  if (fabricOk) {
+    try {
+      startActivityFeed({ polygon: polygonOk && !!env.ESCROW_VAULT_ADDRESS });
+    } catch (err) {
+      logger.warn({ err: (err as Error).message }, 'Activity feed failed to start');
     }
   }
 
