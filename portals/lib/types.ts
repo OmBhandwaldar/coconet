@@ -89,6 +89,7 @@ export interface ActivityEntry {
   source: string;
   event: string;
   label: string;
+  actor: 'Buyer' | 'Supplier' | 'Lender' | 'Platform' | 'System' | null;
   entity_id: string | null;
   deal: string | null;
   tx: string | null;

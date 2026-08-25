@@ -10,6 +10,14 @@ import type { ActivityEntry } from '@/lib/types';
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB');
 
+const ACTOR_CLS: Record<string, string> = {
+  Buyer: 'bg-brand-50 text-brand-700',
+  Supplier: 'bg-emerald-50 text-emerald-700',
+  Lender: 'bg-accent-50 text-accent-dark',
+  Platform: 'bg-slate-100 text-slate-600',
+  System: 'bg-slate-100 text-slate-500',
+};
+
 export default function ActivityPage() {
   const { code } = useDeal();
   const [scope, setScope] = useState<'deal' | 'all'>('deal');
@@ -82,6 +90,11 @@ function Row({ e }: { e: ActivityEntry }) {
           <time className="tnum shrink-0 text-xs text-slate-400">{fmtTime(e.ts)}</time>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+          {e.actor && (
+            <span className={`rounded-full px-2 py-0.5 font-semibold ${ACTOR_CLS[e.actor] ?? 'bg-slate-100 text-slate-500'}`}>
+              {e.actor}
+            </span>
+          )}
           <span className={`rounded-full px-2 py-0.5 font-semibold ${fabric ? 'bg-brand-50 text-brand-700' : 'bg-violet-50 text-violet-700'}`}>
             {fabric ? 'Fabric' : 'Polygon'}
           </span>
