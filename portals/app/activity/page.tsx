@@ -11,11 +11,11 @@ import type { ActivityEntry } from '@/lib/types';
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB');
 
 const ACTOR_CLS: Record<string, string> = {
-  Buyer: 'bg-brand-50 text-brand-700',
-  Supplier: 'bg-emerald-50 text-emerald-700',
-  Lender: 'bg-accent-50 text-accent-dark',
-  Platform: 'bg-slate-100 text-slate-600',
-  System: 'bg-slate-100 text-slate-500',
+  Buyer: 'text-brand-700',
+  Supplier: 'text-emerald-700',
+  Lender: 'text-accent-dark',
+  Platform: 'text-slate-600',
+  System: 'text-slate-500',
 };
 
 export default function ActivityPage() {
@@ -85,25 +85,22 @@ function Row({ e }: { e: ActivityEntry }) {
         {fabric ? <IconShield size={16} /> : <IconLink size={16} />}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-3">
+        <div className="flex items-start justify-between gap-3">
           <p className="truncate text-[0.95rem] font-semibold text-ink">{e.label}</p>
-          <time className="tnum shrink-0 text-xs text-slate-400">{fmtTime(e.ts)}</time>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <time className="tnum text-xs text-slate-400">{fmtTime(e.ts)}</time>
+            <span className={`rounded-lg px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider ${fabric ? 'bg-brand-50 text-brand-700' : 'bg-violet-100 text-violet-700'}`}>
+              {fabric ? 'Fabric' : 'Polygon'}
+            </span>
+          </div>
         </div>
         <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
-          {e.actor && (
-            <span className={`rounded-full px-2 py-0.5 font-semibold ${ACTOR_CLS[e.actor] ?? 'bg-slate-100 text-slate-500'}`}>
-              {e.actor}
-            </span>
-          )}
-          <span className={`rounded-full px-2 py-0.5 font-semibold ${fabric ? 'bg-brand-50 text-brand-700' : 'bg-violet-50 text-violet-700'}`}>
-            {fabric ? 'Fabric' : 'Polygon'}
-          </span>
+          {e.actor && <span className={`font-semibold ${ACTOR_CLS[e.actor] ?? 'text-slate-500'}`}>{e.actor}</span>}
           {e.entity_id && <span className="font-mono text-slate-500">{e.entity_id}</span>}
           {e.deal && <span className="text-slate-400">· {e.deal}</span>}
         </div>
         <p className="mt-1 text-[0.7rem] text-slate-400">
           tx <span className="break-all font-mono text-slate-500">{e.tx ?? '—'}</span>
-          {e.block != null && <> · block {e.block}</>}
         </p>
       </div>
     </motion.div>
