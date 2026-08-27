@@ -43,7 +43,13 @@ export default function SupplierPage() {
   }, [refresh]);
 
   // Derived from the actual on-chain values (parsed or entered) — not hardcoded.
-  const preShip = preShipAmount(po?.gross_value ?? AMT.poGross);
+  // Prefer the lender's real terms once they exist: approved amount → quoted advance
+  // rate × PO → the original ask → a pre-request estimate at the default rate.
+  const preShip =
+    frPre?.approved_amount
+    ?? (frPre?.advance_rate != null ? Math.round((po?.gross_value ?? AMT.poGross) * frPre.advance_rate) : undefined)
+    ?? frPre?.requested_amount
+    ?? preShipAmount(po?.gross_value ?? AMT.poGross);
   const discAmt = discGross(inv?.amount ?? AMT.invAmount);
   // Invoice bills the accepted GRN qty at the PO unit price — a short delivery bills less.
   const invQty = grn?.accepted_qty ?? AMT.invQty;
@@ -89,7 +95,13 @@ export default function SupplierPage() {
         <ActionCard
           icon={<IconFinance size={20} />}
           title="Pre-Shipment Finance"
-          desc={<>Borrow {inrUsd(preShip)} against the PO to fund production, then accept the lender&apos;s offer to lock it as security.</>}
+          desc={frPre?.advance_rate != null ? (
+            <>Lender&apos;s offer: {inrUsd(preShip)} ({(frPre.advance_rate * 100).toFixed(0)}% of the PO)
+              {frPre.interest_rate != null && <> @ {(frPre.interest_rate * 100).toFixed(0)}%</>}
+              {frPre.tenor_days != null && <> for {frPre.tenor_days} days</>}. Accept it to lock the PO as security.</>
+          ) : (
+            <>Borrow {inrUsd(preShip)} against the PO to fund production, then accept the lender&apos;s offer to lock it as security.</>
+          )}
           status={frPre?.security_interest_state === 'Perfected' ? 'Accepted' : frPre?.status}
           done={finDone || frPre?.security_interest_state === 'Perfected'}
         >
