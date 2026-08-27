@@ -94,7 +94,7 @@ export default function LenderPage() {
           {frPre?.status === 'Under Review' && (
             <div className="mb-4 rounded-xl border border-line bg-surface p-4">
               <div className="grid gap-3 sm:grid-cols-3">
-                <RateField label="Advance" value={advPct} onChange={setAdvPct} suffix="%" />
+                <RateField label="Percentage" value={advPct} onChange={setAdvPct} suffix="%" />
                 <RateField label="Interest" value={intPct} onChange={setIntPct} suffix="%" />
                 <RateField label="Tenor" value={tenor} onChange={setTenor} step={1} suffix="d" />
               </div>
