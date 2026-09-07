@@ -23,6 +23,7 @@ router.put('/:id/validate-eligibility', validate(financeIdParamSchema), controll
 router.put('/:id/quote', validate(quoteSchema), controller.submitQuote);
 router.put('/:id/approve', validate(approveSchema), controller.approve);
 router.put('/:id/accept', validate(financeIdParamSchema), controller.accept);
+router.get('/:id/net-settlement-preview', validate(financeIdParamSchema), controller.netSettlementPreview);
 router.put('/:id/disburse', validate(disburseSchema), controller.disburse);
 router.put('/:id/repay', validate(repaySchema), controller.repay);
 

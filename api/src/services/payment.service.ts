@@ -10,6 +10,21 @@ import { generateUtr, isValidIfsc, transferMode, type TransferMode } from '../ad
 
 export type PaymentStatus = 'Initiated' | 'Credited';
 
+// Which leg of the deal this transfer settles.
+export type PaymentPurpose = 'PreShipment' | 'Discounting' | 'Settlement';
+
+const PURPOSE_LABEL: Record<PaymentPurpose, string> = {
+  PreShipment: 'Pre-shipment disbursement',
+  Discounting: 'Discounting payout',
+  Settlement: 'Settlement',
+};
+
+export interface BankAccount {
+  beneficiary_name: string;
+  account_number: string;
+  ifsc: string;
+}
+
 export interface BankPayment {
   payment_id: string;
   deal: string | null;
@@ -19,6 +34,7 @@ export interface BankPayment {
   account_number: string;
   ifsc: string;
   amount_inr: number;
+  purpose: PaymentPurpose;
   mode: TransferMode;
   utr: string;
   status: PaymentStatus;
@@ -35,6 +51,7 @@ export interface InitiatePaymentInput {
   account_number: string;
   ifsc: string;
   amount_inr: number;
+  purpose: PaymentPurpose;
   linked_invoice_id?: string;
 }
 
@@ -65,6 +82,7 @@ export function initiatePayment(input: InitiatePaymentInput): BankPayment {
     account_number: input.account_number,
     ifsc,
     amount_inr: input.amount_inr,
+    purpose: input.purpose,
     mode,
     utr: generateUtr(ifsc, mode),
     status: 'Initiated',
@@ -72,6 +90,11 @@ export function initiatePayment(input: InitiatePaymentInput): BankPayment {
     initiated_at: new Date().toISOString(),
   };
   payments.set(payment.payment_id, payment);
+  saveBankAccount(input.beneficiary_org_id, {
+    beneficiary_name: input.beneficiary_name,
+    account_number: input.account_number,
+    ifsc,
+  });
 
   logger.info({ payment_id: payment.payment_id, mode, utr: payment.utr }, 'Bank transfer initiated (mock rail)');
   recordActivity(payment, 'BankTransferInitiated');
@@ -106,11 +129,27 @@ function recordActivity(p: BankPayment, event: string): void {
     source: 'bank-rail',
     event,
     label: event === 'BankTransferInitiated'
-      ? `${p.mode} transfer initiated`
-      : `${p.mode} transfer credited`,
+      ? `${PURPOSE_LABEL[p.purpose]} initiated · ${p.mode}`
+      : `${PURPOSE_LABEL[p.purpose]} credited`,
     entity_id: p.payment_id,
     deal: p.deal,
     tx: p.utr, // the UTR is this rail's equivalent of a transaction reference
     block: null,
   });
+}
+
+// Beneficiary accounts, remembered per org so a party's details are entered once.
+const accounts = new Map<string, BankAccount>();
+
+export function saveBankAccount(orgId: string, account: BankAccount): BankAccount {
+  const stored = { ...account, ifsc: account.ifsc.toUpperCase() };
+  if (!isValidIfsc(stored.ifsc)) {
+    throw new ValidationError(`Invalid IFSC "${account.ifsc}" — expected 4 letters, 0, then 6 characters (e.g. HDFC0001234)`);
+  }
+  accounts.set(orgId, stored);
+  return stored;
+}
+
+export function getBankAccount(orgId: string): BankAccount | null {
+  return accounts.get(orgId) ?? null;
 }

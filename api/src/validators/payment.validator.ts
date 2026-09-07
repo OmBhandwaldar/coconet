@@ -14,10 +14,24 @@ export const initiatePaymentSchema = z.object({
     account_number: accountNumber,
     ifsc,
     amount_inr: z.number().positive(),
+    purpose: z.enum(['PreShipment', 'Discounting', 'Settlement']),
     linked_invoice_id: z.string().optional(),
   }),
 });
 
 export const paymentIdParamSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
+});
+
+export const bankAccountSchema = z.object({
+  params: z.object({ orgId: z.string().min(1) }),
+  body: z.object({
+    beneficiary_name: z.string().min(1),
+    account_number: accountNumber,
+    ifsc,
+  }),
+});
+
+export const orgIdParamSchema = z.object({
+  params: z.object({ orgId: z.string().min(1) }),
 });

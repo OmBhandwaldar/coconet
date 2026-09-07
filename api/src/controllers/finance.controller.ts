@@ -63,6 +63,13 @@ export async function disburse(req: Request, res: Response, next: NextFunction):
   } catch (err) { next(err); }
 }
 
+export async function netSettlementPreview(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    const preview = await service.previewNetSettlement(req.params.id, String(req.query.pre_shipment_request_id ?? ''));
+    res.json({ success: true, data: preview, correlationId: req.correlationId });
+  } catch (err) { next(err); }
+}
+
 export async function repay(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const fr = await service.recordRepayment(req.params.id, req.body.amount, req.body.payment_ref);

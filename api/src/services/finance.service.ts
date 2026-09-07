@@ -140,6 +140,24 @@ export interface DiscountingDisbursementResult {
 
 // Disburse an accepted invoice-discounting request, auto-settling a linked
 // pre-shipment loan and paying the supplier the net.
+// Same math as disburseWithNetSettlement, but read-only — lets the bank rail know
+// the net payable before it initiates the transfer.
+export async function previewNetSettlement(
+  discountingRequestId: string,
+  preShipmentRequestId: string,
+): Promise<NetSettlement> {
+  const disc = await getFinanceRequest(discountingRequestId);
+  const preShip = await getFinanceRequest(preShipmentRequestId);
+  const invoice = await getInvoice(disc.asset_id);
+  return computeNetSettlement(
+    invoice.amount,
+    disc.discount_rate ?? 0,
+    preShip.disbursed_amount ?? 0,
+    preShip.interest_rate ?? 0,
+    preShip.tenor_days ?? 0,
+  );
+}
+
 export async function disburseWithNetSettlement(
   discountingRequestId: string,
   preShipmentRequestId: string,
