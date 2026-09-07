@@ -6,8 +6,8 @@ export type Actor = 'Buyer' | 'Supplier' | 'Lender' | 'Platform' | 'System';
 export interface ActivityEntry {
   seq: number;
   ts: string; // ISO — receipt time (block-level time isn't carried on the event)
-  chain: 'fabric' | 'polygon';
-  source: string; // chaincode name or 'escrow'
+  chain: 'fabric' | 'polygon' | 'bank';
+  source: string; // chaincode name, 'escrow', or 'bank-rail'
   event: string;
   label: string;
   actor: Actor | null; // business role that performs this action (derived — MVP has no per-role auth)
@@ -32,6 +32,8 @@ export const ACTORS: Record<string, Actor> = {
   FinanceEligibilityPassed: 'Lender', FinanceEligibilityFailed: 'Lender',
   FinanceOffered: 'Lender', FinanceApproved: 'Lender', FinanceDisbursed: 'Lender', FinanceRepaid: 'System',
   EscrowInstructionCreated: 'Buyer', EscrowFunded: 'Buyer', FundsRefunded: 'Buyer', FundsReleased: 'System',
+  // bank rail (off-chain)
+  BankTransferInitiated: 'Buyer', BankTransferCredited: 'Lender',
 };
 
 // Event name → human label. Unknown events fall back to their raw name.

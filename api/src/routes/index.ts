@@ -5,6 +5,7 @@ import tradeDocRouter from './trade-doc.route.js';
 import financeRouter from './finance.route.js';
 import escrowRouter from './escrow.route.js';
 import activityRouter from './activity.route.js';
+import paymentRouter from './payment.route.js';
 
 const router = Router();
 
@@ -14,5 +15,6 @@ router.use('/trade-docs', tradeDocRouter);
 router.use('/finance', financeRouter);
 router.use('/escrow', escrowRouter);
 router.use('/activity', activityRouter);
+router.use('/payments', paymentRouter);
 
 export default router;
