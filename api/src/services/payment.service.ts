@@ -23,7 +23,13 @@ export interface BankAccount {
   beneficiary_name: string;
   account_number: string;
   ifsc: string;
+  bank_name: string;
+  branch: string;
 }
+
+// How the reference was obtained: through a bank payment-initiation API (we get the
+// UTR back), or keyed in by the payer who already paid from their own banking channel.
+export type EntryMode = 'api' | 'manual';
 
 export interface BankPayment {
   payment_id: string;
@@ -33,9 +39,12 @@ export interface BankPayment {
   beneficiary_name: string;
   account_number: string;
   ifsc: string;
+  bank_name: string;
+  branch: string;
   amount_inr: number;
   purpose: PaymentPurpose;
   mode: TransferMode;
+  entry_mode: EntryMode;
   utr: string;
   status: PaymentStatus;
   linked_invoice_id?: string;
@@ -50,8 +59,11 @@ export interface InitiatePaymentInput {
   beneficiary_name: string;
   account_number: string;
   ifsc: string;
+  bank_name: string;
+  branch: string;
   amount_inr: number;
   purpose: PaymentPurpose;
+  utr?: string; // supplied when the payer already paid elsewhere; generated otherwise
   linked_invoice_id?: string;
 }
 
@@ -89,10 +101,13 @@ export function initiatePayment(input: InitiatePaymentInput): BankPayment {
     beneficiary_name: input.beneficiary_name,
     account_number: input.account_number,
     ifsc,
+    bank_name: input.bank_name,
+    branch: input.branch,
     amount_inr: input.amount_inr,
     purpose: input.purpose,
     mode,
-    utr: generateUtr(ifsc, mode),
+    entry_mode: input.utr ? 'manual' : 'api',
+    utr: input.utr?.trim().toUpperCase() || generateUtr(ifsc, mode),
     status: 'Initiated',
     linked_invoice_id: input.linked_invoice_id,
     initiated_at: new Date().toISOString(),
@@ -102,9 +117,11 @@ export function initiatePayment(input: InitiatePaymentInput): BankPayment {
     beneficiary_name: input.beneficiary_name,
     account_number: input.account_number,
     ifsc,
+    bank_name: input.bank_name,
+    branch: input.branch,
   });
 
-  logger.info({ payment_id: payment.payment_id, mode, utr: payment.utr }, 'Bank transfer initiated (mock rail)');
+  logger.info({ payment_id: payment.payment_id, mode, utr: payment.utr, entry_mode: payment.entry_mode }, 'Bank transfer initiated (mock rail)');
   recordActivity(payment, 'BankTransferInitiated');
   return payment;
 }
@@ -137,7 +154,7 @@ function recordActivity(p: BankPayment, event: string): void {
     source: 'bank-rail',
     event,
     label: event === 'BankTransferInitiated'
-      ? `${PURPOSE_LABEL[p.purpose]} initiated · ${p.mode}`
+      ? `${PURPOSE_LABEL[p.purpose]} ${p.entry_mode === 'manual' ? 'recorded' : 'initiated'} · ${p.mode}`
       : `${PURPOSE_LABEL[p.purpose]} credited`,
     entity_id: p.payment_id,
     deal: p.deal,

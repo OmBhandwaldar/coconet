@@ -201,7 +201,7 @@ export default function SupplierPage() {
                       <span className="tnum text-sm font-bold text-ink">₹{p.amount_inr.toLocaleString('en-IN')}</span>
                     </div>
                     <p className="mt-1 break-all text-xs text-slate-500">
-                      {p.mode} · UTR <span className="font-mono">{p.utr}</span>
+                      {p.mode} · {p.bank_name}, {p.branch} · UTR <span className="font-mono">{p.utr}</span>
                     </p>
                     <div className="mt-3">
                       {p.status === 'Credited' ? (

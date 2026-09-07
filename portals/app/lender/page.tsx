@@ -208,7 +208,7 @@ export default function LenderPage() {
                     <span className="break-all font-mono text-sm font-semibold text-ink">{paySettle.utr}</span>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                    <span>{paySettle.mode} · {paySettle.beneficiary_name} · {paySettle.account_number} · {paySettle.ifsc}</span>
+                    <span>{paySettle.mode} · {paySettle.bank_name}, {paySettle.branch} · {paySettle.account_number} · {paySettle.ifsc}</span>
                     <span className="tnum font-semibold text-ink">₹{paySettle.amount_inr.toLocaleString('en-IN')}</span>
                   </div>
                 </div>

@@ -102,6 +102,8 @@ export interface BankAccount {
   beneficiary_name: string;
   account_number: string;
   ifsc: string;
+  bank_name: string;
+  branch: string;
 }
 
 export interface BankPayment {
@@ -112,9 +114,12 @@ export interface BankPayment {
   beneficiary_name: string;
   account_number: string;
   ifsc: string;
+  bank_name: string;
+  branch: string;
   amount_inr: number;
   purpose: PaymentPurpose;
   mode: 'NEFT' | 'RTGS';
+  entry_mode: 'api' | 'manual';
   utr: string;
   status: 'Initiated' | 'Credited';
   linked_invoice_id?: string;

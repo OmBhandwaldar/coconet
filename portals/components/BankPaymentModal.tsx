@@ -35,6 +35,12 @@ export function BankPaymentModal({
   const [name, setName] = useState(defaultAccount.beneficiary_name);
   const [acct, setAcct] = useState(defaultAccount.account_number);
   const [ifsc, setIfsc] = useState(defaultAccount.ifsc);
+  const [bankName, setBankName] = useState(defaultAccount.bank_name);
+  const [branch, setBranch] = useState(defaultAccount.branch);
+  // 'api' = we initiate through the bank and get the UTR back.
+  // 'manual' = the payer already paid from their own banking channel and keys the UTR in.
+  const [entryMode, setEntryMode] = useState<'api' | 'manual'>('api');
+  const [manualUtr, setManualUtr] = useState('');
 
   useEffect(() => setMounted(true), []);
   useEffect(() => {
@@ -52,7 +58,10 @@ export function BankPaymentModal({
       const a = await apiGet<BankAccount>(`/api/payments/accounts/${beneficiaryOrgId}`);
       if (cancelled) return;
       setSaved(a);
-      if (a) { setName(a.beneficiary_name); setAcct(a.account_number); setIfsc(a.ifsc); }
+      if (a) {
+        setName(a.beneficiary_name); setAcct(a.account_number); setIfsc(a.ifsc);
+        setBankName(a.bank_name); setBranch(a.branch);
+      }
       setEditing(!a);
     })();
     return () => { cancelled = true; };
@@ -104,6 +113,7 @@ export function BankPaymentModal({
                       <button onClick={() => setEditing(true)} className="text-xs font-semibold text-brand-600 hover:underline">Change</button>
                     </div>
                     <p className="mt-1 text-sm font-semibold text-ink">{saved!.beneficiary_name}</p>
+                    <p className="text-xs text-slate-500">{saved!.bank_name} · {saved!.branch}</p>
                     <p className="text-xs text-slate-500">{saved!.account_number} · {saved!.ifsc}</p>
                   </div>
                 ) : (
@@ -111,6 +121,14 @@ export function BankPaymentModal({
                     <Field label="Beneficiary name">
                       <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
                     </Field>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Field label="Bank name">
+                        <input value={bankName} onChange={(e) => setBankName(e.target.value)} className={inputCls} />
+                      </Field>
+                      <Field label="Branch">
+                        <input value={branch} onChange={(e) => setBranch(e.target.value)} className={inputCls} />
+                      </Field>
+                    </div>
                     <div className="grid gap-3 sm:grid-cols-2">
                       <Field label="Account number">
                         <input value={acct} onChange={(e) => setAcct(e.target.value)} className={`${inputCls} tnum`} />
@@ -123,9 +141,34 @@ export function BankPaymentModal({
                   </div>
                 )}
 
-                <div className="mt-5">
+                <div className="mt-5 rounded-xl border border-line bg-surface p-3">
+                  <p className="mb-2 text-[0.7rem] font-semibold uppercase tracking-wide text-slate-400">How is this paid?</p>
+                  <div className="inline-flex rounded-lg border border-line bg-white p-1">
+                    {([['api', 'Initiate via bank API'], ['manual', "I've already paid"]] as const).map(([key, label]) => (
+                      <button key={key} onClick={() => setEntryMode(key)}
+                        className={`rounded-md px-3 py-1.5 text-xs font-semibold transition ${entryMode === key ? 'bg-ink text-white' : 'text-slate-500 hover:text-ink'}`}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {entryMode === 'api'
+                      ? 'We instruct the bank and record the UTR it returns.'
+                      : 'Paid from your own banking channel — enter the UTR your bank gave you.'}
+                  </p>
+                  {entryMode === 'manual' && (
+                    <div className="mt-3">
+                      <Field label="UTR from your bank">
+                        <input value={manualUtr} onChange={(e) => setManualUtr(e.target.value.toUpperCase())}
+                          placeholder="e.g. SBINR52026090712345" className={`${inputCls} font-mono`} />
+                      </Field>
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4">
                   <ActionButton
-                    label={`Initiate ${mode} Transfer`}
+                    label={entryMode === 'manual' ? 'Record Payment' : `Initiate ${mode} Transfer`}
                     icon={<IconCoins size={16} />}
                     run={async () => {
                       const r = await apiCall<BankPayment>('POST', '/api/payments', {
@@ -135,8 +178,11 @@ export function BankPaymentModal({
                         beneficiary_name: knownAccount ? saved!.beneficiary_name : name,
                         account_number: knownAccount ? saved!.account_number : acct,
                         ifsc: knownAccount ? saved!.ifsc : ifsc,
+                        bank_name: knownAccount ? saved!.bank_name : bankName,
+                        branch: knownAccount ? saved!.branch : branch,
                         amount_inr: amountInr,
                         purpose,
+                        utr: entryMode === 'manual' ? manualUtr : undefined,
                         linked_invoice_id: linkedInvoiceId,
                       });
                       // Let the caller record the resulting UTR on-ledger.
@@ -170,7 +216,11 @@ function PaymentReceipt({ payment, onDone }: { payment: BankPayment; onDone: () 
           <span className="break-all font-mono text-sm font-semibold text-ink">{payment.utr}</span>
         </div>
         <p className="mt-2 text-xs text-slate-500">
-          {payment.mode} · {payment.beneficiary_name} · {payment.account_number} · {payment.ifsc}
+          {payment.mode} · {payment.beneficiary_name} · {payment.bank_name}, {payment.branch}
+        </p>
+        <p className="text-xs text-slate-500">{payment.account_number} · {payment.ifsc}</p>
+        <p className="mt-1 text-[0.7rem] text-slate-400">
+          {payment.entry_mode === 'manual' ? 'Reference entered by the payer' : 'Reference returned by the bank'}
         </p>
       </div>
       {credited ? (
