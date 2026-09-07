@@ -3,6 +3,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { apiCall } from './api';
 
 const KEY = 'coconet_deal';
+const RAIL_KEY = 'coconet_rail';
+
+// Settlement rail is chosen once, when the deal starts, and applies to every money leg.
+export type Rail = 'onchain' | 'bank';
 
 // Seeded org identities (from api/scripts/seed-orgs.ts) — the UI shows generic
 // role names but the API needs these org ids (they map to EVM addresses too).
@@ -20,7 +24,9 @@ export interface DealIds {
   frDisc: string;   // invoice-discounting finance request
   escInv: string;   // dedicated escrow invoice (approved AFTER funding to trigger release)
   esc: string;      // escrow
-  pay: string;      // off-chain bank payment (bank settlement rail)
+  payPre: string;   // bank rail: pre-shipment disbursement (lender → supplier)
+  payDisc: string;  // bank rail: discounting payout, net (lender → supplier)
+  paySettle: string;// bank rail: final settlement (buyer → lender)
 }
 
 export function idsFor(code: string): DealIds {
@@ -32,26 +38,33 @@ export function idsFor(code: string): DealIds {
     frDisc: `FRDISC-${code}`,
     escInv: `ESCINV-${code}`,
     esc: `ESC-${code}`,
-    pay: `PAY-${code}`,
+    payPre: `PAYPRE-${code}`,
+    payDisc: `PAYDISC-${code}`,
+    paySettle: `PAYSET-${code}`,
   };
 }
 
 // Shared across tabs of the same browser via localStorage + the storage event.
 export function useDeal() {
   const [code, setCode] = useState<string | null>(null);
+  const [rail, setRail] = useState<Rail>('onchain');
 
   useEffect(() => {
     setCode(localStorage.getItem(KEY));
+    setRail((localStorage.getItem(RAIL_KEY) as Rail) ?? 'onchain');
     const onStorage = (e: StorageEvent) => {
       if (e.key === KEY) setCode(e.newValue);
+      if (e.key === RAIL_KEY) setRail((e.newValue as Rail) ?? 'onchain');
     };
     window.addEventListener('storage', onStorage);
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  function setDeal(next: string) {
+  function setDeal(next: string, nextRail: Rail = 'onchain') {
     localStorage.setItem(KEY, next);
+    localStorage.setItem(RAIL_KEY, nextRail);
     setCode(next);
+    setRail(nextRail);
   }
 
   // Memoize so `ids` keeps a stable reference across renders (only changes when the
@@ -61,6 +74,7 @@ export function useDeal() {
 
   return {
     code,
+    rail,
     ids,
     setDeal,
     newCode: () => 'D-' + Date.now().toString(36).toUpperCase(),

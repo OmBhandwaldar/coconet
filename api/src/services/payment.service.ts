@@ -1,6 +1,6 @@
 import { ConflictError, NotFoundError, ValidationError } from '../errors/AppError.js';
 import { logger } from '../config/logger.js';
-import { record } from './activity.service.js';
+import { record, type Actor } from './activity.service.js';
 import { generateUtr, isValidIfsc, transferMode, type TransferMode } from '../adapters/bank.adapter.js';
 
 // Off-chain bank settlement rail — the alternative to the on-chain escrow.
@@ -56,6 +56,14 @@ export interface InitiatePaymentInput {
 }
 
 const payments = new Map<string, BankPayment>();
+
+// Demo consortium roles — who a given org id is, for attributing each transfer.
+const ORG_ROLE: Record<string, Actor> = {
+  'tata-001': 'Buyer',
+  'bharat-001': 'Supplier',
+  'hdfc-001': 'Lender',
+};
+const roleOf = (orgId: string): Actor | null => ORG_ROLE[orgId] ?? null;
 
 // Deal code is the D-XXXX token embedded in linked entity ids (PAY-D-AB12).
 function dealFrom(id: string): string | null {
@@ -135,6 +143,8 @@ function recordActivity(p: BankPayment, event: string): void {
     deal: p.deal,
     tx: p.utr, // the UTR is this rail's equivalent of a transaction reference
     block: null,
+    // The payer initiates; the beneficiary confirms the credit.
+    actor: event === 'BankTransferInitiated' ? roleOf(p.payer_org_id) : roleOf(p.beneficiary_org_id),
   });
 }
 

@@ -32,8 +32,6 @@ export const ACTORS: Record<string, Actor> = {
   FinanceEligibilityPassed: 'Lender', FinanceEligibilityFailed: 'Lender',
   FinanceOffered: 'Lender', FinanceApproved: 'Lender', FinanceDisbursed: 'Lender', FinanceRepaid: 'System',
   EscrowInstructionCreated: 'Buyer', EscrowFunded: 'Buyer', FundsRefunded: 'Buyer', FundsReleased: 'System',
-  // bank rail (off-chain)
-  BankTransferInitiated: 'Buyer', BankTransferCredited: 'Lender',
 };
 
 // Event name → human label. Unknown events fall back to their raw name.
@@ -102,8 +100,9 @@ export function entityFromFabricPayload(p: Record<string, unknown>): string | nu
   return typeof v === 'string' ? v : null;
 }
 
-export function record(e: Omit<ActivityEntry, 'seq' | 'actor'>): ActivityEntry {
-  const entry: ActivityEntry = { ...e, actor: ACTORS[e.event] ?? null, seq: ++seq };
+export function record(e: Omit<ActivityEntry, 'seq' | 'actor'> & { actor?: Actor | null }): ActivityEntry {
+  // Explicit actor wins — some events (bank transfers) only know the role from their parties.
+  const entry: ActivityEntry = { ...e, actor: e.actor ?? ACTORS[e.event] ?? null, seq: ++seq };
   buffer.push(entry);
   if (buffer.length > MAX) buffer.shift();
   return entry;

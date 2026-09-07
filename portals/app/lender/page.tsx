@@ -7,11 +7,13 @@ import { ActionButton, ActionCard, Field, inputCls, inrUsd, usd } from '@/compon
 import { DocButton } from '@/components/DocViewer';
 import { PageHeader, EmptyDeal, ResultBanner } from '@/components/workspace';
 import { apiCall, apiGet } from '@/lib/api';
-import { useDeal } from '@/lib/deal';
+import { ORG, useDeal } from '@/lib/deal';
 import { AMT, escrowUsd } from '@/lib/amounts';
 import { stagger } from '@/lib/motion';
 import { IconFinance, IconLink, IconShield, IconCheck, IconCoins } from '@/components/icons';
-import type { BankPayment, Escrow, FinanceRequest, Invoice, PurchaseOrder } from '@/lib/types';
+import { BankPaymentModal } from '@/components/BankPaymentModal';
+import { BANK_ACCOUNTS } from '@/lib/banks';
+import type { BankPayment, Escrow, FinanceRequest, Invoice, PurchaseOrder, Settlement } from '@/lib/types';
 
 function RateField({ label, value, onChange, step = 0.5, suffix }: { label: string; value: number; onChange: (n: number) => void; step?: number; suffix?: string }) {
   return (
@@ -25,25 +27,32 @@ function RateField({ label, value, onChange, step = 0.5, suffix }: { label: stri
 }
 
 export default function LenderPage() {
-  const { code, ids } = useDeal();
+  const { code, rail, ids } = useDeal();
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [frPre, setFrPre] = useState<FinanceRequest | null>(null);
   const [frDisc, setFrDisc] = useState<FinanceRequest | null>(null);
   const [inv, setInv] = useState<Invoice | null>(null);
   const [esc, setEsc] = useState<Escrow | null>(null);
-  const [pay, setPay] = useState<BankPayment | null>(null);
+  const [paySettle, setPaySettle] = useState<BankPayment | null>(null);
+  const [payPre, setPayPre] = useState<BankPayment | null>(null);
+  const [payDisc, setPayDisc] = useState<BankPayment | null>(null);
+  const [preOpen, setPreOpen] = useState(false);
+  const [discOpen, setDiscOpen] = useState(false);
+  const [netAmt, setNetAmt] = useState<number | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    const [p, fp, fd, i, e, bp] = await Promise.all([
+    const [p, fp, fd, i, e, bp, bpre, bdisc] = await Promise.all([
       apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`),
       apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
       apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`),
-      apiGet<BankPayment>(`/api/payments/${ids.pay}`),
+      apiGet<BankPayment>(`/api/payments/${ids.paySettle}`),
+      apiGet<BankPayment>(`/api/payments/${ids.payPre}`),
+      apiGet<BankPayment>(`/api/payments/${ids.payDisc}`),
     ]);
-    setPo(p); setFrPre(fp); setFrDisc(fd); setInv(i); setEsc(e); setPay(bp);
+    setPo(p); setFrPre(fp); setFrDisc(fd); setInv(i); setEsc(e); setPaySettle(bp); setPayPre(bpre); setPayDisc(bdisc);
   }, [ids]);
 
   useEffect(() => {
@@ -113,8 +122,15 @@ export default function LenderPage() {
               run={() => apiCall('PUT', `/api/finance/${ids.frPre}/quote`, { advance_rate: advPct / 100, interest_rate: intPct / 100, tenor_days: tenor })} onDone={refresh} />
             <ActionButton label="Approve" disabled={frPre?.status !== 'Offered'}
               run={() => apiCall('PUT', `/api/finance/${ids.frPre}/approve`, { approved_amount: preShip })} onDone={refresh} />
-            <ActionButton label="Disburse Loan" icon={<IconCheck size={16} />} disabled={frPre?.status !== 'Accepted'}
-              run={() => apiCall('PUT', `/api/finance/${ids.frPre}/disburse`, { disbursement_ref: `NEFT-${code}` })} onDone={refresh} />
+            {rail === 'bank' ? (
+              <button onClick={() => setPreOpen(true)} disabled={frPre?.status !== 'Accepted'}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
+                <IconCoins size={16} /> Disburse by Bank Transfer
+              </button>
+            ) : (
+              <ActionButton label="Disburse Loan" icon={<IconCheck size={16} />} disabled={frPre?.status !== 'Accepted'}
+                run={() => apiCall('PUT', `/api/finance/${ids.frPre}/disburse`, { disbursement_ref: `NEFT-${code}` })} onDone={refresh} />
+            )}
             <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
           </div>
         </ActionCard>
@@ -138,8 +154,21 @@ export default function LenderPage() {
               run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/validate-eligibility`)} onDone={refresh} />
             <ActionButton label="Submit Quote" icon={<IconCoins size={16} />} disabled={frDisc?.status !== 'Under Review'}
               run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/quote`, { discount_rate: discPct / 100 })} onDone={refresh} />
-            <ActionButton label="Disburse (Net Settlement)" icon={<IconCheck size={16} />} disabled={frDisc?.status !== 'Accepted'}
-              run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/disburse`, { disbursement_ref: `DISC-${code}`, pre_shipment_request_id: ids.frPre })} onDone={refresh} />
+            {rail === 'bank' ? (
+              <button
+                onClick={async () => {
+                  const preview = await apiGet<Settlement>(`/api/finance/${ids.frDisc}/net-settlement-preview?pre_shipment_request_id=${ids.frPre}`);
+                  setNetAmt(preview?.net_to_supplier ?? null);
+                  setDiscOpen(true);
+                }}
+                disabled={frDisc?.status !== 'Accepted'}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-brand px-3.5 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-brand-dark disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
+                <IconCoins size={16} /> Disburse by Bank Transfer
+              </button>
+            ) : (
+              <ActionButton label="Disburse (Net Settlement)" icon={<IconCheck size={16} />} disabled={frDisc?.status !== 'Accepted'}
+                run={() => apiCall('PUT', `/api/finance/${ids.frDisc}/disburse`, { disbursement_ref: `DISC-${code}`, pre_shipment_request_id: ids.frPre })} onDone={refresh} />
+            )}
             <DocButton doc={inv ? { kind: 'INVOICE', data: inv } : null} label="View Invoice" />
           </div>
           {inv?.assignment_status === 'Assigned' && (
@@ -147,47 +176,87 @@ export default function LenderPage() {
           )}
         </ActionCard>
 
-        {/* Escrow collection */}
-        <ActionCard
-          icon={<IconShield size={20} />}
-          title="Escrow Collection"
-          desc="When the buyer gives final approval, the escrow auto-releases to you across chains."
-          status={esc?.status}
-          done={released}
-        >
-          {released
-            ? <ResultBanner tone="good">Received {usd(escrowUsd(inv?.amount ?? AMT.invAmount))} from escrow.</ResultBanner>
-            : <p className="text-sm text-slate-500">Waiting for release… (escrow: {esc?.status ?? 'not created'})</p>}
-        </ActionCard>
+        {/* Escrow collection — on-chain rail only */}
+        {rail === 'onchain' && (
+          <ActionCard
+            icon={<IconShield size={20} />}
+            title="Escrow Collection"
+            desc="When the buyer gives final approval, the escrow auto-releases to you across chains."
+            status={esc?.status}
+            done={released}
+          >
+            {released
+              ? <ResultBanner tone="good">Received {usd(escrowUsd(inv?.amount ?? AMT.invAmount))} from escrow.</ResultBanner>
+              : <p className="text-sm text-slate-500">Waiting for release… (escrow: {esc?.status ?? 'not created'})</p>}
+          </ActionCard>
+        )}
 
-        {/* Bank rail (off-chain) — only shown once the buyer has used it. */}
-        {pay && (
+        {/* Settlement collection — bank rail: confirm the buyer's transfer landed. */}
+        {rail === 'bank' && (
           <ActionCard
             icon={<IconCoins size={20} />}
-            title={`Bank Transfer (${pay.mode})`}
-            desc={<>The buyer settled off-chain by {pay.mode}. Confirm the credit once it lands — this stands in for bank reconciliation.</>}
-            status={pay.status}
-            done={pay.status === 'Credited'}
+            title="Settlement Collection"
+            desc="The buyer settles off-chain by bank transfer. Confirm the credit once it lands — this stands in for bank reconciliation."
+            status={paySettle?.status}
+            done={paySettle?.status === 'Credited'}
           >
-            <div className="rounded-xl bg-surface px-4 py-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-medium text-slate-500">UTR</span>
-                <span className="break-all font-mono text-sm font-semibold text-ink">{pay.utr}</span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                <span>{pay.beneficiary_name} · {pay.account_number} · {pay.ifsc}</span>
-                <span className="tnum font-semibold text-ink">₹{pay.amount_inr.toLocaleString('en-IN')}</span>
-              </div>
-            </div>
-            <div className="mt-4">
-              <ActionButton label="Confirm Receipt" icon={<IconCheck size={16} />} disabled={pay.status === 'Credited'}
-                run={() => apiCall('PUT', `/api/payments/${ids.pay}/confirm`)} onDone={refresh} />
-            </div>
-            {pay.status === 'Credited' && (
-              <ResultBanner tone="good">₹{pay.amount_inr.toLocaleString('en-IN')} credited · UTR {pay.utr}</ResultBanner>
+            {paySettle ? (
+              <>
+                <div className="rounded-xl bg-surface px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-500">UTR</span>
+                    <span className="break-all font-mono text-sm font-semibold text-ink">{paySettle.utr}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>{paySettle.mode} · {paySettle.beneficiary_name} · {paySettle.account_number} · {paySettle.ifsc}</span>
+                    <span className="tnum font-semibold text-ink">₹{paySettle.amount_inr.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+                <div className="mt-4">
+                  <ActionButton label="Confirm Receipt" icon={<IconCheck size={16} />} disabled={paySettle.status === 'Credited'}
+                    run={() => apiCall('PUT', `/api/payments/${ids.paySettle}/confirm`)} onDone={refresh} />
+                </div>
+                {paySettle.status === 'Credited' && (
+                  <ResultBanner tone="good">₹{paySettle.amount_inr.toLocaleString('en-IN')} credited · UTR {paySettle.utr}</ResultBanner>
+                )}
+              </>
+            ) : (
+              <p className="text-sm text-slate-500">Waiting for the buyer to initiate the transfer…</p>
             )}
           </ActionCard>
         )}
+
+        {/* Bank-leg modals (disbursements the lender makes) */}
+        <BankPaymentModal
+          open={preOpen}
+          onClose={() => setPreOpen(false)}
+          title="Pre-shipment disbursement"
+          purpose="PreShipment"
+          paymentId={ids.payPre}
+          payerOrgId={ORG.lender}
+          beneficiaryOrgId={ORG.supplier}
+          defaultAccount={BANK_ACCOUNTS[ORG.supplier]}
+          amountInr={preShip}
+          payment={payPre}
+          onDone={() => { setPreOpen(false); refresh(); }}
+          onInitiated={(p) => apiCall('PUT', `/api/finance/${ids.frPre}/disburse`, { disbursement_ref: p.utr })}
+        />
+        <BankPaymentModal
+          open={discOpen}
+          onClose={() => setDiscOpen(false)}
+          title="Discounting payout (net of the pre-shipment loan)"
+          purpose="Discounting"
+          paymentId={ids.payDisc}
+          payerOrgId={ORG.lender}
+          beneficiaryOrgId={ORG.supplier}
+          defaultAccount={BANK_ACCOUNTS[ORG.supplier]}
+          amountInr={netAmt ?? discAmt}
+          linkedInvoiceId={ids.inv}
+          payment={payDisc}
+          onDone={() => { setDiscOpen(false); refresh(); }}
+          onInitiated={(p) => apiCall('PUT', `/api/finance/${ids.frDisc}/disburse`, { disbursement_ref: p.utr, pre_shipment_request_id: ids.frPre })}
+        />
+
       </motion.div>
     </AppShell>
   );

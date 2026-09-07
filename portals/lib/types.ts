@@ -96,6 +96,14 @@ export interface ActivityEntry {
   block: number | null;
 }
 
+export type PaymentPurpose = 'PreShipment' | 'Discounting' | 'Settlement';
+
+export interface BankAccount {
+  beneficiary_name: string;
+  account_number: string;
+  ifsc: string;
+}
+
 export interface BankPayment {
   payment_id: string;
   deal: string | null;
@@ -105,6 +113,7 @@ export interface BankPayment {
   account_number: string;
   ifsc: string;
   amount_inr: number;
+  purpose: PaymentPurpose;
   mode: 'NEFT' | 'RTGS';
   utr: string;
   status: 'Initiated' | 'Credited';

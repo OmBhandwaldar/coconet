@@ -5,20 +5,22 @@ import { useState } from 'react';
 import { motion } from 'motion/react';
 import { Logo } from '@/components/Logo';
 import { fadeUp, stagger } from '@/lib/motion';
-import { ensureOrgs, useDeal } from '@/lib/deal';
+import { ensureOrgs, useDeal, type Rail } from '@/lib/deal';
 import {
   IconArrowRight, IconPlus, IconClock, IconFinance, IconLink,
 } from '@/components/icons';
 
 export default function Home() {
   const { setDeal, newCode } = useDeal();
+  // Settlement rail is picked before the deal starts and drives every money leg.
+  const [rail, setRailChoice] = useState<Rail>('onchain');
   const router = useRouter();
   const [busy, setBusy] = useState(false);
 
   async function startAndOpen() {
     setBusy(true);
     await ensureOrgs();
-    setDeal(newCode());
+    setDeal(newCode(), rail);
     setBusy(false);
     router.push('/buyer');
   }
@@ -61,6 +63,7 @@ export default function Home() {
                 discounting and programmable escrow settlement, all in one place.
               </motion.p>
               <motion.div variants={fadeUp} className="mt-8 flex flex-wrap items-center gap-3">
+                <RailToggle rail={rail} onChange={setRailChoice} />
                 <button onClick={startAndOpen} disabled={busy}
                   className="inline-flex items-center gap-2 rounded-full bg-lime px-6 py-3 text-sm font-bold text-night transition hover:bg-lime-600 disabled:opacity-70">
                   {busy ? <IconClock size={16} className="animate-spin" /> : <IconPlus size={16} />}
@@ -177,3 +180,15 @@ function BentoCard({ tone, title, body, Icon }: {
   );
 }
 
+function RailToggle({ rail, onChange }: { rail: Rail; onChange: (r: Rail) => void }) {
+  return (
+    <div className="inline-flex items-center rounded-full bg-white/10 p-1 ring-1 ring-inset ring-white/15">
+      {([['onchain', 'On-chain'], ['bank', 'Bank']] as const).map(([key, label]) => (
+        <button key={key} onClick={() => onChange(key)}
+          className={`rounded-full px-3.5 py-2 text-sm font-semibold transition ${rail === key ? 'bg-lime text-night' : 'text-white/70 hover:text-white'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}

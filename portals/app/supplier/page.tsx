@@ -13,27 +13,31 @@ import { ORG, useDeal } from '@/lib/deal';
 import { AMT, discGross, preShipAmount } from '@/lib/amounts';
 import { stagger } from '@/lib/motion';
 import { IconDoc, IconFinance, IconReceipt, IconCheck, IconLink, IconCoins } from '@/components/icons';
-import type { FinanceRequest, GRN, Invoice, PurchaseOrder } from '@/lib/types';
+import type { BankPayment, FinanceRequest, GRN, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function SupplierPage() {
-  const { code, ids } = useDeal();
+  const { code, rail, ids } = useDeal();
   const [po, setPo] = useState<PurchaseOrder | null>(null);
   const [grn, setGrn] = useState<GRN | null>(null);
   const [inv, setInv] = useState<Invoice | null>(null);
   const [frPre, setFrPre] = useState<FinanceRequest | null>(null);
   const [frDisc, setFrDisc] = useState<FinanceRequest | null>(null);
   const [invDocHash, setInvDocHash] = useState<string | null>(null);
+  const [payPre, setPayPre] = useState<BankPayment | null>(null);
+  const [payDisc, setPayDisc] = useState<BankPayment | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    const [p, g, i, fp, fd] = await Promise.all([
+    const [p, g, i, fp, fd, bpre, bdisc] = await Promise.all([
       apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`),
       apiGet<GRN>(`/api/trade-docs/grn/${ids.grn}`),
       apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`),
+      apiGet<BankPayment>(`/api/payments/${ids.payPre}`),
+      apiGet<BankPayment>(`/api/payments/${ids.payDisc}`),
     ]);
-    setPo(p); setGrn(g); setInv(i); setFrPre(fp); setFrDisc(fd);
+    setPo(p); setGrn(g); setInv(i); setFrPre(fp); setFrDisc(fd); setPayPre(bpre); setPayDisc(bdisc);
   }, [ids]);
 
   useEffect(() => {
@@ -179,6 +183,43 @@ export default function SupplierPage() {
             <ResultBanner tone="good">Net received {inrUsd(frDisc.net_disbursed)} — pre-shipment loan auto-settled.</ResultBanner>
           )}
         </ActionCard>
+        {/* Incoming bank transfers — confirm each credit (bank rail only). */}
+        {rail === 'bank' && (payPre || payDisc) && (
+          <ActionCard
+            icon={<IconCoins size={20} />}
+            title="Incoming Bank Transfers"
+            desc="The lender disburses off-chain. Confirm each credit as it lands in your account."
+            status={payDisc?.status ?? payPre?.status}
+            done={!!payPre && payPre.status === 'Credited' && (!payDisc || payDisc.status === 'Credited')}
+          >
+            <div className="space-y-3">
+              {([['Pre-shipment', payPre, ids.payPre], ['Discounting payout (net)', payDisc, ids.payDisc]] as const).map(
+                ([label, p, id]) => p && (
+                  <div key={id} className="rounded-xl border border-line bg-white px-4 py-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-sm font-semibold text-ink">{label}</span>
+                      <span className="tnum text-sm font-bold text-ink">₹{p.amount_inr.toLocaleString('en-IN')}</span>
+                    </div>
+                    <p className="mt-1 break-all text-xs text-slate-500">
+                      {p.mode} · UTR <span className="font-mono">{p.utr}</span>
+                    </p>
+                    <div className="mt-3">
+                      {p.status === 'Credited' ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                          <IconCheck size={14} /> Credited
+                        </span>
+                      ) : (
+                        <ActionButton label="Confirm Receipt" icon={<IconCheck size={16} />}
+                          run={() => apiCall('PUT', `/api/payments/${id}/confirm`)} onDone={refresh} />
+                      )}
+                    </div>
+                  </div>
+                ),
+              )}
+            </div>
+          </ActionCard>
+        )}
+
       </motion.div>
     </AppShell>
   );
