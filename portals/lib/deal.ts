@@ -20,6 +20,7 @@ export interface DealIds {
   frDisc: string;   // invoice-discounting finance request
   escInv: string;   // dedicated escrow invoice (approved AFTER funding to trigger release)
   esc: string;      // escrow
+  pay: string;      // off-chain bank payment (bank settlement rail)
 }
 
 export function idsFor(code: string): DealIds {
@@ -31,6 +32,7 @@ export function idsFor(code: string): DealIds {
     frDisc: `FRDISC-${code}`,
     escInv: `ESCINV-${code}`,
     esc: `ESC-${code}`,
+    pay: `PAY-${code}`,
   };
 }
 

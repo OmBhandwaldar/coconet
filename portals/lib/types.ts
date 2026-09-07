@@ -85,7 +85,7 @@ export interface Settlement {
 export interface ActivityEntry {
   seq: number;
   ts: string;
-  chain: 'fabric' | 'polygon';
+  chain: 'fabric' | 'polygon' | 'bank';
   source: string;
   event: string;
   label: string;
@@ -94,4 +94,21 @@ export interface ActivityEntry {
   deal: string | null;
   tx: string | null;
   block: number | null;
+}
+
+export interface BankPayment {
+  payment_id: string;
+  deal: string | null;
+  payer_org_id: string;
+  beneficiary_org_id: string;
+  beneficiary_name: string;
+  account_number: string;
+  ifsc: string;
+  amount_inr: number;
+  mode: 'NEFT' | 'RTGS';
+  utr: string;
+  status: 'Initiated' | 'Credited';
+  linked_invoice_id?: string;
+  initiated_at: string;
+  credited_at?: string;
 }

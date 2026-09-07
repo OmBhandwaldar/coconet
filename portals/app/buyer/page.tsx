@@ -10,9 +10,10 @@ import { PageHeader, EmptyDeal, ResultBanner, UploadChip, MatchAlert } from '@/c
 import { apiCall, apiGet, apiSeq, parseFile } from '@/lib/api';
 import { ORG, useDeal } from '@/lib/deal';
 import { escrowUsd } from '@/lib/amounts';
-import { stagger } from '@/lib/motion';
-import { IconDoc, IconTruck, IconReceipt, IconShield, IconCheck, IconArrowRight } from '@/components/icons';
-import type { Escrow, GRN, Invoice, PurchaseOrder } from '@/lib/types';
+import { fadeUp, stagger } from '@/lib/motion';
+import { IconDoc, IconTruck, IconReceipt, IconShield, IconCheck, IconArrowRight, IconCoins } from '@/components/icons';
+import { BANK_ACCOUNTS, modeFor } from '@/lib/banks';
+import type { BankPayment, Escrow, GRN, Invoice, PurchaseOrder } from '@/lib/types';
 
 export default function BuyerPage() {
   const { code, ids } = useDeal();
@@ -20,6 +21,13 @@ export default function BuyerPage() {
   const [grn, setGrn] = useState<GRN | null>(null);
   const [inv, setInv] = useState<Invoice | null>(null);
   const [esc, setEsc] = useState<Escrow | null>(null);
+  // Settlement rail: on-chain escrow (USDC) or the off-chain bank rail (INR).
+  const [rail, setRail] = useState<'escrow' | 'bank'>('escrow');
+  const [pay, setPay] = useState<BankPayment | null>(null);
+  const bene = BANK_ACCOUNTS[ORG.lender];
+  const [beneName, setBeneName] = useState(bene.beneficiary_name);
+  const [acctNo, setAcctNo] = useState(bene.account_number);
+  const [ifsc, setIfsc] = useState(bene.ifsc);
   // PO is the buyer's document — entered here or parsed from an uploaded file.
   const [item, setItem] = useState('Laptops');
   const [qty, setQty] = useState(100);
@@ -62,13 +70,14 @@ export default function BuyerPage() {
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    const [p, g, i, e] = await Promise.all([
+    const [p, g, i, e, bp] = await Promise.all([
       apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`),
       apiGet<GRN>(`/api/trade-docs/grn/${ids.grn}`),
       apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
       apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`),
+      apiGet<BankPayment>(`/api/payments/${ids.pay}`),
     ]);
-    setPo(p); setGrn(g); setInv(i); setEsc(e);
+    setPo(p); setGrn(g); setInv(i); setEsc(e); setPay(bp);
   }, [ids]);
 
   useEffect(() => {
@@ -191,6 +200,76 @@ export default function BuyerPage() {
           {inv?.status === 'Submitted' && inv.match_result?.passed === false && <MatchAlert reasons={inv.match_result.reasons} />}
         </ActionCard>
 
+        {/* Settlement rail — everything before this point is identical either way. */}
+        <motion.div variants={fadeUp} className="flex flex-wrap items-center gap-3 rounded-2xl border border-line bg-white p-4 shadow-card">
+          <span className="text-sm font-semibold text-ink">Settlement rail</span>
+          <div className="inline-flex rounded-xl border border-line bg-surface p-1">
+            {([['escrow', 'On-chain escrow'], ['bank', 'Bank transfer']] as const).map(([key, label]) => (
+              <button key={key} onClick={() => setRail(key)}
+                className={`rounded-lg px-3.5 py-1.5 text-sm font-semibold transition ${rail === key ? 'bg-ink text-white' : 'text-slate-500 hover:text-ink'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-slate-500">
+            {rail === 'escrow'
+              ? `Programmable escrow on Polygon, settled in USDC (${usd(escUsd)}).`
+              : `Off-chain NEFT/RTGS transfer, settled in rupees (₹${escInvAmount.toLocaleString('en-IN')}).`}
+          </span>
+        </motion.div>
+
+        {/* Bank rail (off-chain) */}
+        {rail === 'bank' && (
+          <ActionCard
+            icon={<IconCoins size={20} />}
+            title={`Bank Transfer (${modeFor(escInvAmount)})`}
+            desc={<>Pay ₹{escInvAmount.toLocaleString('en-IN')} to the lender&apos;s account. This leg settles off-chain — only the UTR comes back for reconciliation.</>}
+            status={pay?.status}
+            done={pay?.status === 'Credited'}
+          >
+            {pay ? (
+              <div className="space-y-2 text-sm text-slate-600">
+                <div className="rounded-xl bg-surface px-4 py-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-500">UTR</span>
+                    <span className="break-all font-mono text-sm font-semibold text-ink">{pay.utr}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>{pay.mode} · {pay.beneficiary_name} · {pay.account_number} · {pay.ifsc}</span>
+                    <span className="tnum font-semibold text-ink">₹{pay.amount_inr.toLocaleString('en-IN')}</span>
+                  </div>
+                </div>
+                {pay.status === 'Initiated'
+                  ? <p className="text-xs text-slate-500">Awaiting the beneficiary to confirm the credit (Lender workspace).</p>
+                  : <ResultBanner tone="good">Credited to the lender · UTR {pay.utr}</ResultBanner>}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="Beneficiary name"><input value={beneName} onChange={(e) => setBeneName(e.target.value)} className={inputCls} /></Field>
+                  <Field label="Account number"><input value={acctNo} onChange={(e) => setAcctNo(e.target.value)} className={`${inputCls} tnum`} /></Field>
+                  <Field label="IFSC"><input value={ifsc} onChange={(e) => setIfsc(e.target.value.toUpperCase())} className={inputCls} /></Field>
+                </div>
+                <div className="flex items-center justify-between rounded-xl bg-surface px-4 py-2.5">
+                  <span className="text-xs font-medium text-slate-500">Amount · {modeFor(escInvAmount)} (auto-selected by value)</span>
+                  <span className="tnum text-sm font-bold text-ink">₹{escInvAmount.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            )}
+            {!pay && (
+              <div className="mt-4">
+                <ActionButton label="Initiate Transfer" icon={<IconCoins size={16} />} disabled={!invReady}
+                  run={() => apiCall('POST', '/api/payments', {
+                    payment_id: ids.pay, payer_org_id: ORG.buyer, beneficiary_org_id: ORG.lender,
+                    beneficiary_name: beneName, account_number: acctNo, ifsc,
+                    amount_inr: escInvAmount, linked_invoice_id: ids.inv,
+                  })} onDone={refresh} />
+              </div>
+            )}
+          </ActionCard>
+        )}
+
+        {rail === 'escrow' && (<>
         {/* Escrow */}
         <ActionCard
           icon={<IconShield size={20} />}
@@ -233,6 +312,7 @@ export default function BuyerPage() {
             run={() => apiCall('POST', `/api/escrow/instructions/${ids.esc}/refund`)} onDone={refresh} />
           {esc?.status === 'Refunded' && <ResultBanner tone="bad">Refunded to buyer.</ResultBanner>}
         </ActionCard>
+        </>)}
       </motion.div>
     </AppShell>
   );

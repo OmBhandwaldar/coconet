@@ -5,7 +5,7 @@ import { AppShell } from '@/components/AppShell';
 import { PageHeader } from '@/components/workspace';
 import { fetchActivity } from '@/lib/api';
 import { useDeal } from '@/lib/deal';
-import { IconActivity, IconLink, IconShield } from '@/components/icons';
+import { IconActivity, IconLink, IconShield, IconCoins } from '@/components/icons';
 import type { ActivityEntry } from '@/lib/types';
 
 const fmtTime = (iso: string) => new Date(iso).toLocaleTimeString('en-GB');
@@ -44,7 +44,7 @@ export default function ActivityPage() {
     <AppShell active="Activity">
       <PageHeader
         title="Activity"
-        subtitle="Every action on the deal, recorded on-chain — with the transaction id and block it was written in."
+        subtitle="Every action on the deal, with the reference it was recorded under — a transaction id on-chain, or a UTR on the bank rail."
       />
 
       {/* scope toggle */}
@@ -72,8 +72,14 @@ export default function ActivityPage() {
   );
 }
 
+const CHAIN_STYLE = {
+  fabric: { label: 'Fabric', chip: 'bg-brand-50 text-brand-700', icon: 'bg-brand-50 text-brand-600' },
+  polygon: { label: 'Polygon', chip: 'bg-violet-100 text-violet-700', icon: 'bg-violet-50 text-violet-600' },
+  bank: { label: 'Bank', chip: 'bg-emerald-100 text-emerald-700', icon: 'bg-emerald-50 text-emerald-600' },
+} as const;
+
 function Row({ e }: { e: ActivityEntry }) {
-  const fabric = e.chain === 'fabric';
+  const style = CHAIN_STYLE[e.chain] ?? CHAIN_STYLE.fabric;
   return (
     <motion.div
       initial={{ opacity: 0, y: -6 }}
@@ -81,16 +87,16 @@ function Row({ e }: { e: ActivityEntry }) {
       transition={{ type: 'spring', stiffness: 380, damping: 30 }}
       className="flex items-start gap-3 rounded-xl border border-line bg-white p-3.5 shadow-card"
     >
-      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${fabric ? 'bg-brand-50 text-brand-600' : 'bg-violet-50 text-violet-600'}`}>
-        {fabric ? <IconShield size={16} /> : <IconLink size={16} />}
+      <span className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${style.icon}`}>
+        {e.chain === 'fabric' ? <IconShield size={16} /> : e.chain === 'bank' ? <IconCoins size={16} /> : <IconLink size={16} />}
       </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-start justify-between gap-3">
           <p className="truncate text-[0.95rem] font-semibold text-ink">{e.label}</p>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <time className="tnum text-xs text-slate-400">{fmtTime(e.ts)}</time>
-            <span className={`rounded-lg px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider ${fabric ? 'bg-brand-50 text-brand-700' : 'bg-violet-100 text-violet-700'}`}>
-              {fabric ? 'Fabric' : 'Polygon'}
+            <span className={`rounded-lg px-2.5 py-1 text-[0.65rem] font-bold uppercase tracking-wider ${style.chip}`}>
+              {style.label}
             </span>
           </div>
         </div>
@@ -100,7 +106,7 @@ function Row({ e }: { e: ActivityEntry }) {
           {e.deal && <span className="text-slate-400">· {e.deal}</span>}
         </div>
         <p className="mt-1 text-[0.7rem] text-slate-400">
-          tx <span className="break-all font-mono text-slate-500">{e.tx ?? '—'}</span>
+          {e.chain === 'bank' ? 'UTR' : 'tx'} <span className="break-all font-mono text-slate-500">{e.tx ?? '—'}</span>
         </p>
       </div>
     </motion.div>
@@ -114,7 +120,7 @@ function EmptyState({ hasDeal, scope }: { hasDeal: boolean; scope: 'deal' | 'all
       <p className="mt-3 text-sm text-slate-500">
         {scope === 'deal' && !hasDeal
           ? 'No active deal — start one, then actions will appear here as they hit the chain.'
-          : 'No on-chain activity yet. Drive a deal in the workspaces and it will show up here.'}
+          : 'No activity yet. Drive a deal in the workspaces and it will show up here.'}
       </p>
     </div>
   );

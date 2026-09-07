@@ -11,7 +11,7 @@ import { useDeal } from '@/lib/deal';
 import { AMT, escrowUsd } from '@/lib/amounts';
 import { stagger } from '@/lib/motion';
 import { IconFinance, IconLink, IconShield, IconCheck, IconCoins } from '@/components/icons';
-import type { Escrow, FinanceRequest, Invoice, PurchaseOrder } from '@/lib/types';
+import type { BankPayment, Escrow, FinanceRequest, Invoice, PurchaseOrder } from '@/lib/types';
 
 function RateField({ label, value, onChange, step = 0.5, suffix }: { label: string; value: number; onChange: (n: number) => void; step?: number; suffix?: string }) {
   return (
@@ -31,17 +31,19 @@ export default function LenderPage() {
   const [frDisc, setFrDisc] = useState<FinanceRequest | null>(null);
   const [inv, setInv] = useState<Invoice | null>(null);
   const [esc, setEsc] = useState<Escrow | null>(null);
+  const [pay, setPay] = useState<BankPayment | null>(null);
 
   const refresh = useCallback(async () => {
     if (!ids) return;
-    const [p, fp, fd, i, e] = await Promise.all([
+    const [p, fp, fd, i, e, bp] = await Promise.all([
       apiGet<PurchaseOrder>(`/api/trade-docs/purchase-orders/${ids.po}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frPre}`),
       apiGet<FinanceRequest>(`/api/finance/${ids.frDisc}`),
       apiGet<Invoice>(`/api/trade-docs/invoices/${ids.inv}`),
       apiGet<Escrow>(`/api/escrow/instructions/${ids.esc}`),
+      apiGet<BankPayment>(`/api/payments/${ids.pay}`),
     ]);
-    setPo(p); setFrPre(fp); setFrDisc(fd); setInv(i); setEsc(e);
+    setPo(p); setFrPre(fp); setFrDisc(fd); setInv(i); setEsc(e); setPay(bp);
   }, [ids]);
 
   useEffect(() => {
@@ -157,6 +159,35 @@ export default function LenderPage() {
             ? <ResultBanner tone="good">Received {usd(escrowUsd(inv?.amount ?? AMT.invAmount))} from escrow.</ResultBanner>
             : <p className="text-sm text-slate-500">Waiting for release… (escrow: {esc?.status ?? 'not created'})</p>}
         </ActionCard>
+
+        {/* Bank rail (off-chain) — only shown once the buyer has used it. */}
+        {pay && (
+          <ActionCard
+            icon={<IconCoins size={20} />}
+            title={`Bank Transfer (${pay.mode})`}
+            desc={<>The buyer settled off-chain by {pay.mode}. Confirm the credit once it lands — this stands in for bank reconciliation.</>}
+            status={pay.status}
+            done={pay.status === 'Credited'}
+          >
+            <div className="rounded-xl bg-surface px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-500">UTR</span>
+                <span className="break-all font-mono text-sm font-semibold text-ink">{pay.utr}</span>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                <span>{pay.beneficiary_name} · {pay.account_number} · {pay.ifsc}</span>
+                <span className="tnum font-semibold text-ink">₹{pay.amount_inr.toLocaleString('en-IN')}</span>
+              </div>
+            </div>
+            <div className="mt-4">
+              <ActionButton label="Confirm Receipt" icon={<IconCheck size={16} />} disabled={pay.status === 'Credited'}
+                run={() => apiCall('PUT', `/api/payments/${ids.pay}/confirm`)} onDone={refresh} />
+            </div>
+            {pay.status === 'Credited' && (
+              <ResultBanner tone="good">₹{pay.amount_inr.toLocaleString('en-IN')} credited · UTR {pay.utr}</ResultBanner>
+            )}
+          </ActionCard>
+        )}
       </motion.div>
     </AppShell>
   );
