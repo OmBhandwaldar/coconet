@@ -119,7 +119,7 @@ export function initiatePayment(input: InitiatePaymentInput): BankPayment {
     ifsc,
     bank_name: input.bank_name,
     branch: input.branch,
-  });
+  }, payment.deal);
 
   logger.info({ payment_id: payment.payment_id, mode, utr: payment.utr, entry_mode: payment.entry_mode }, 'Bank transfer initiated (mock rail)');
   recordActivity(payment, 'BankTransferInitiated');
@@ -165,18 +165,23 @@ function recordActivity(p: BankPayment, event: string): void {
   });
 }
 
-// Beneficiary accounts, remembered per org so a party's details are entered once.
+// Beneficiary accounts, remembered so a party's details are entered once.
+// Scoped per deal: within a deal the second transfer to the same party reuses
+// them, but each new deal starts clean. (A production org master would hold
+// these once per organization instead.)
 const accounts = new Map<string, BankAccount>();
 
-export function saveBankAccount(orgId: string, account: BankAccount): BankAccount {
+const accountKey = (orgId: string, deal?: string | null) => (deal ? `${deal}:${orgId}` : orgId);
+
+export function saveBankAccount(orgId: string, account: BankAccount, deal?: string | null): BankAccount {
   const stored = { ...account, ifsc: account.ifsc.toUpperCase() };
   if (!isValidIfsc(stored.ifsc)) {
     throw new ValidationError(`Invalid IFSC "${account.ifsc}" — expected 4 letters, 0, then 6 characters (e.g. HDFC0001234)`);
   }
-  accounts.set(orgId, stored);
+  accounts.set(accountKey(orgId, deal), stored);
   return stored;
 }
 
-export function getBankAccount(orgId: string): BankAccount | null {
-  return accounts.get(orgId) ?? null;
+export function getBankAccount(orgId: string, deal?: string | null): BankAccount | null {
+  return accounts.get(accountKey(orgId, deal)) ?? null;
 }

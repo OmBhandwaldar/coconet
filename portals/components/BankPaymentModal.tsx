@@ -55,7 +55,9 @@ export function BankPaymentModal({
     if (!open || payment) return;
     let cancelled = false;
     (async () => {
-      const a = await apiGet<BankAccount>(`/api/payments/accounts/${beneficiaryOrgId}`);
+      // Scope the lookup to this deal — a fresh deal always re-asks.
+      const deal = paymentId.match(/D-[0-9A-Z]+/)?.[0] ?? '';
+      const a = await apiGet<BankAccount>(`/api/payments/accounts/${beneficiaryOrgId}?deal=${deal}`);
       if (cancelled) return;
       setSaved(a);
       if (a) {
@@ -65,7 +67,7 @@ export function BankPaymentModal({
       setEditing(!a);
     })();
     return () => { cancelled = true; };
-  }, [open, beneficiaryOrgId, payment]);
+  }, [open, beneficiaryOrgId, payment, paymentId]);
 
   const mode = modeFor(amountInr);
   const knownAccount = !!saved && !editing;

@@ -24,14 +24,16 @@ export function get(req: Request, res: Response, next: NextFunction): void {
 
 export function getAccount(req: Request, res: Response, next: NextFunction): void {
   try {
-    const account = service.getBankAccount(req.params.orgId);
+    const deal = typeof req.query.deal === 'string' ? req.query.deal : undefined;
+    const account = service.getBankAccount(req.params.orgId, deal);
     res.json({ success: true, data: account, correlationId: req.correlationId });
   } catch (err) { next(err); }
 }
 
 export function saveAccount(req: Request, res: Response, next: NextFunction): void {
   try {
-    const account = service.saveBankAccount(req.params.orgId, req.body);
+    const deal = typeof req.query.deal === 'string' ? req.query.deal : undefined;
+    const account = service.saveBankAccount(req.params.orgId, req.body, deal);
     res.json({ success: true, data: account, correlationId: req.correlationId });
   } catch (err) { next(err); }
 }
