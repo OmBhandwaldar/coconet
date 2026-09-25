@@ -130,6 +130,7 @@ This is a **dual-chain architecture**. Never mix responsibilities.
 5. `blockToLive: 0` on audit-relevant collections (irreversible after creation).
 6. **Every private payload carries a random 128-bit salt** — Fabric writes the hash of private data to every peer on the channel, and predictable values (a discount rate, a round amount) are brute-forceable without one.
 7. Collections are not access control — every private-data read path must verify the caller is a party to the deal.
+8. **No application-level encryption** of channel state or collection payloads — members are entitled to the data, and encrypting index data breaks Rule-02 and cross-chain correlation. At-rest encryption is an infrastructure concern (NFR-01).
 
 ---
 

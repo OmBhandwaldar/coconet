@@ -205,13 +205,35 @@ Rules:
 - This applies to **every** collection carrying guessable data: per-deal payloads,
   `escrowAmountsPDC`, and `sanctionsResultPDC` (a boolean pass/fail is maximally guessable).
 
-### 3.4 Off-chain stores must be partitioned per org
+### 3.4 No application-level encryption — of channel state or collection payloads
+
+Decided explicitly, because it is the obvious next question after §3.3 and the answer is not "more
+crypto".
+
+| Where | Encrypt? | Why |
+|---|---|---|
+| **Channel public state** | **No** | It holds only IDs, hashes, statuses and lien markers. Encrypting breaks what they exist for: Rule-02 must read the lien marker, and the bridge must read `escrowPaymentId` in the clear to correlate across chains. Document hashes are already one-way. |
+| **Private collection payloads** | **No** | Every org in a deal's collection is entitled to the data — that is why it was disseminated to them. Either they hold the key (encryption protects nothing from them) or they do not (the data is useless to them). Against non-parties, collection membership already prevents delivery. Cost without benefit: key distribution, rotation, revocation on member exit, and loss of CouchDB rich queries over private data. |
+| **Private state DB, MongoDB, MinIO at rest** | **Yes — at the infrastructure layer** | NFR-01. Disk/volume encryption and the stores' own at-rest encryption. Not a chaincode concern. |
+| **In transit** | **Yes** | TLS is already enabled network-wide; keep it for Mongo and MinIO too. |
+
+**The hash exposure is closed by the salt (§3.3), not by encryption.** Reaching for encryption to
+solve it would be treating the symptom with the wrong tool.
+
+**One open exception.** `escrowAmountsPDC` scoped to "buyer treasury only" is a *user-level* boundary
+inside a single org, and the ABAC check in §6 is soft — it does not stop that org's own peer
+administrators. If that boundary ever needs to be hard, encrypting the value under a key held only
+by the treasury role is the correct mechanism, precisely because the data rests on peers whose
+operators should not read it. This is the inverse of the collection case and the only place
+application-level encryption earns its cost. Left open; not required today.
+
+### 3.5 Off-chain stores must be partitioned per org
 
 MongoDB and the planned PostgreSQL reporting database must be partitioned by organization. Isolating
 data on-chain and then pooling it in the query layer reproduces every leak in §1.1 outside the
 ledger, where it is easier to exfiltrate.
 
-### 3.5 Endorsement policy — provisional, deliberately deferred
+### 3.6 Endorsement policy — provisional, deliberately deferred
 
 Fabric requires that **the private data distribution policy be broader than the endorsement policy**,
 because a peer must hold the private data in order to endorse a transaction that touches it. With
@@ -319,7 +341,7 @@ Ordered by cost-of-delay, not by size:
 4. **Add caller-party checks** to every private-data read path (§4.1).
 5. **Per-org activity feed filtering.**
 6. **Deploy tooling** — collection config support in the deploy script.
-7. **Endorsement policy** — settle at first collections deployment (§3.5).
+7. **Endorsement policy** — settle at first collections deployment (§3.6).
 8. **ABAC** — with Fabric CA per-user identities.
 
 Doing 3 and 4 **before** `provenance-cc`, `dispute-cc` and `audit-cc` are written is materially
@@ -338,12 +360,14 @@ cheaper than after; all three would otherwise need rewriting.
 - No commercial data in chaincode event payloads, ever.
 - `financingTermsPDC` replaced; `sanctionsResultPDC` unchanged; `escrowAmountsPDC` retained plus ABAC.
 - Off-chain stores partitioned per org.
+- **No application-level encryption** of channel state or collection payloads; at-rest encryption handled at the infrastructure layer (§3.4).
 - Caller-party checks mandatory on every private-data read path.
 
 **Open:**
 - Final endorsement policy shape (provisional in §3.4).
 - Exact ABAC attribute taxonomy, pending Fabric CA work.
 - Whether auditor records are replicated by the bridge, by `audit-cc`, or by a dedicated service.
+- Whether `escrowAmountsPDC` needs value-level encryption to make "treasury only" a hard boundary (§3.4).
 
 ---
 
