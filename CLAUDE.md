@@ -128,7 +128,8 @@ This is a **dual-chain architecture**. Never mix responsibilities.
 3. Payloads are passed as **transient data**, never as chaincode arguments.
 4. **No commercial data in chaincode event payloads, ever** — events reach every channel member and are immutable.
 5. `blockToLive: 0` on audit-relevant collections (irreversible after creation).
-6. Collections are not access control — every private-data read path must verify the caller is a party to the deal.
+6. **Every private payload carries a random 128-bit salt** — Fabric writes the hash of private data to every peer on the channel, and predictable values (a discount rate, a round amount) are brute-forceable without one.
+7. Collections are not access control — every private-data read path must verify the caller is a party to the deal.
 
 ---
 

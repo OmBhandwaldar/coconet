@@ -133,6 +133,16 @@ chaincode namespace."* See §4 for how cross-chaincode reads are done correctly.
 | `escrowAmountsPDC` | **Keep, buyer-scoped, plus ABAC.** The org boundary is correct (it is the buyer's own money); the "treasury only" part is a *user-level* restriction and needs Fabric CA attributes (§6), not a collection. |
 | `financingTermsPDC` | **Replaced** by per-deal implicit collections. This is the one that leaks under BR-10. |
 
+
+### 2.5 Alternatives considered and rejected
+
+| Option | Why rejected |
+|---|---|
+| **Named pairwise collections** (one per buyer-supplier-lender combination) | Requires a `collections_config.json` entry and a **chaincode redeploy for every new member**, and grows combinatorially with the org set. Directly conflicts with BR-10's multi-party programmes. |
+| **Encrypt payloads inside a shared role-scoped collection** | Simpler to deploy, but moves the whole problem into key management (distribution, rotation, revocation on member exit) and destroys queryability — CouchDB rich queries cannot read ciphertext. Compromise of one key retroactively exposes every deal in the collection. |
+| **Keep role-scoped collections and filter reads in chaincode** | Not a boundary. The bytes are already in the member org's private state DB; its operators read CouchDB directly and bypass chaincode (§1.2). |
+| **One channel per buyer-supplier relationship** | Genuine isolation, but channel count explodes, cross-deal queries become impossible, and each new relationship needs channel creation and chaincode deployment. Also fragments the shared event chain that is the platform's premise. |
+
 ---
 
 ## 3. Decided parameters
@@ -162,13 +172,46 @@ replays chaincode events from block 0 and serves them globally. Two follow-on re
 1. Audit and strip every `setEvent` payload in all three chaincodes.
 2. Filter the activity feed per requesting org, rather than serving one global feed.
 
-### 3.3 Off-chain stores must be partitioned per org
+### 3.3 Every private payload carries a random salt
+
+**Fabric writes a hash of every private data item to the channel ledger of every peer on the
+channel.** Collections hide the value, not its existence — and a hash of a predictable value is not
+a secret.
+
+Fabric documents the attack directly: *"If the private data is relatively simple and predictable
+(e.g. transaction dollar amount), channel members who are not authorized to the private data
+collection could try to guess the content of the private data via brute force hashing of the domain
+space, in hopes of finding a match with the private data hash on the chain."*
+
+Our data is precisely this case. A discount rate lives in a domain of a few hundred plausible values
+(0.5% to 6.0% in basis points). An invoice amount is usually round. ICICI, holding Deal A's public
+hash, could brute-force HDFC's 2.0% in milliseconds — defeating Design 2 for the exact field it was
+built to protect.
+
+**Decision: every private data value includes a random salt**, concatenated with the private data
+key and carried in the value, per Fabric's own mitigation: *"Private data that is predictable should
+therefore include a random 'salt' that is concatenated with the private data key and included in the
+private data value, so that a matching hash cannot realistically be found via brute force."*
+
+Rules:
+- The salt is generated **client-side** (API layer) and passed through the **transient field** —
+  never derived in chaincode from deterministic inputs such as the tx ID, which endorsers must
+  agree on and attackers can see.
+- At least 128 bits from a CSPRNG.
+- One fresh salt **per private data item**, not per deal — reusing a salt across a deal's items
+  lets one cracked value unlock the rest.
+- The salt is stored inside the private value, so parties reading the collection get it for free;
+  non-members get neither salt nor value.
+- This applies to **every** collection carrying guessable data: per-deal payloads,
+  `escrowAmountsPDC`, and `sanctionsResultPDC` (a boolean pass/fail is maximally guessable).
+
+### 3.4 Off-chain stores must be partitioned per org
 
 MongoDB and the planned PostgreSQL reporting database must be partitioned by organization. Isolating
 data on-chain and then pooling it in the query layer reproduces every leak in §1.1 outside the
 ledger, where it is easier to exfiltrate.
 
-### 3.4 Endorsement policy — provisional, deliberately deferred
+### 3.5 Endorsement policy — provisional, deliberately deferred
 
 Fabric requires that **the private data distribution policy be broader than the endorsement policy**,
 because a peer must hold the private data in order to endorse a transaction that touches it. With
@@ -257,7 +300,7 @@ Platform Admin ([api/src/fabric/gateway.ts](api/src/fabric/gateway.ts)).
 | `finance-cc` | Same split. Financing terms move off the main channel — this closes the known gap logged in MVP-PLAN Block 4. `crossQuery` unchanged (§4). |
 | `onboarding-cc` | Minimal. Org records are legitimately network-wide; sanctions results already platform-only. |
 | `provenance-cc`, `dispute-cc`, `audit-cc` | **Not yet written — build to this design from the start.** Retrofitting is the expensive path. |
-| `api/src/services/*` | Pass payloads as transient data; read as the requesting org rather than as Platform. |
+| `api/src/services/*` | Pass payloads as transient data; **generate a 128-bit CSPRNG salt per private item** (§3.3); read as the requesting org rather than as Platform. |
 | `activity-feed.service.ts` | Per-org filtering; stop serving one global feed. |
 | `scripts/deploy-chaincode.sh` | No `--collections` flag today. Needs collection config and per-collection endorsement policy support. |
 | Chaincode unit tests | Mock stub needs `getPrivateData`, `putPrivateData`, `getTransient`. |
@@ -272,11 +315,11 @@ Ordered by cost-of-delay, not by size:
 
 1. **Strip commercial data from chaincode event payloads** (§3.2). No retroactive fix exists; do this before any real data is committed.
 2. **Record this design** — done, this file.
-3. **Refactor `trade-doc-cc` and `finance-cc` write paths** to transient data + party implicit collections, with `blockToLive: 0`.
+3. **Refactor `trade-doc-cc` and `finance-cc` write paths** to transient data + party implicit collections, with `blockToLive: 0` and a per-item random salt (§3.3).
 4. **Add caller-party checks** to every private-data read path (§4.1).
 5. **Per-org activity feed filtering.**
 6. **Deploy tooling** — collection config support in the deploy script.
-7. **Endorsement policy** — settle at first collections deployment (§3.4).
+7. **Endorsement policy** — settle at first collections deployment (§3.5).
 8. **ABAC** — with Fabric CA per-user identities.
 
 Doing 3 and 4 **before** `provenance-cc`, `dispute-cc` and `audit-cc` are written is materially
@@ -291,6 +334,7 @@ cheaper than after; all three would otherwise need rewriting.
 - Per-deal implicit collections over named pairwise collections (no redeploy on new members).
 - Payloads via transient data, never as chaincode arguments.
 - `blockToLive: 0` on audit-relevant collections.
+- Every private payload carries a client-generated 128-bit random salt (hashes are public; predictable values are brute-forceable).
 - No commercial data in chaincode event payloads, ever.
 - `financingTermsPDC` replaced; `sanctionsResultPDC` unchanged; `escrowAmountsPDC` retained plus ABAC.
 - Off-chain stores partitioned per org.
