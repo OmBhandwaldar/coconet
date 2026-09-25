@@ -111,13 +111,24 @@ This is a **dual-chain architecture**. Never mix responsibilities.
 | `auditor-channel` | Auditor, Platform (read-only) |
 
 ### Fabric PDCs (privacy by design — BRD NFR-06)
-| PDC | Visible To |
-|---|---|
-| `financingTermsPDC` | Lender + Supplier only |
-| `escrowAmountsPDC` | Buyer treasury only |
-| `sanctionsResultPDC` | Platform only |
 
-**Rule:** Confidential financing terms (rates, fees, tenor) go in PDCs — never on the main channel.
+> **Decided 25 Sep 2026 — see [PRIVACY-DESIGN.md](PRIVACY-DESIGN.md) for the authoritative design.**
+> Role-scoped collections leak between competitors as soon as a second lender or buyer joins
+> (BR-10). Data placement is now: **channel = membership boundary, collection = deal boundary.**
+
+| PDC | Visible To | Status |
+|---|---|---|
+| `financingTermsPDC` | — | **Replaced** by per-deal implicit collections (`_implicit_org_<MSPID>`) |
+| `escrowAmountsPDC` | Buyer org + ABAC check | Retained; "treasury only" needs Fabric CA attributes, not a collection |
+| `sanctionsResultPDC` | Platform only | Unchanged — platform-only is genuinely one org |
+
+**Rules:**
+1. Confidential data (rates, fees, tenor, amounts, quantities, prices) goes in per-deal collections — never on the main channel.
+2. Channel public state holds **index data only**: IDs, document hashes, statuses, party org IDs, Rule-02 lien markers.
+3. Payloads are passed as **transient data**, never as chaincode arguments.
+4. **No commercial data in chaincode event payloads, ever** — events reach every channel member and are immutable.
+5. `blockToLive: 0` on audit-relevant collections (irreversible after creation).
+6. Collections are not access control — every private-data read path must verify the caller is a party to the deal.
 
 ---
 
@@ -314,7 +325,8 @@ Each phase has detailed chaincode functions + Express routes documented in [PLAN
 - Use `fabric-contract-api` decorators
 - Every function that changes state MUST emit an event for the bridge / audit to consume
 - Every state transition MUST call `audit-cc.logEvent()` for NFR-05
-- Use PDCs for confidential data — never put financing terms on the main channel
+- Use per-deal private collections for confidential data — never put financing terms, amounts or rates on the main channel ([PRIVACY-DESIGN.md](PRIVACY-DESIGN.md))
+- Event payloads carry IDs, hashes and statuses only — never amounts or rates (events reach every channel member and are immutable)
 
 ### Solidity
 - Pragma `^0.8.20` or higher
@@ -499,7 +511,7 @@ Don't chase 100%. Chase: "if I broke something important, the test would catch i
 
 1. **Don't put escrow logic on Fabric.** Escrow is on Polygon. Fabric only receives settlement confirmations.
 2. **Don't skip the bridge.** Fabric events flow to Polygon via `bridge.service.ts` — never hardcode cross-chain calls.
-3. **Don't put financing terms on the main channel.** They go in `financingTermsPDC`.
+3. **Don't put financing terms on the main channel.** They go in the deal's per-deal implicit collections — see [PRIVACY-DESIGN.md](PRIVACY-DESIGN.md). `financingTermsPDC` as a role-scoped collection is superseded; it leaks between competing lenders.
 4. **Don't allow a finance request without Rule-02 check.** Duplicate financing prevention must run every time.
 5. **Don't release escrow manually.** Release must always evaluate all conditions via `ReleaseConditionEvaluator.sol`.
 6. **Don't invent fields not in the BRD.** If a field is needed but missing from the BRD, flag it — do not silently add it.
@@ -524,6 +536,7 @@ Don't chase 100%. Chase: "if I broke something important, the test would catch i
 
 ## 22. Key References
 
+- [PRIVACY-DESIGN.md](PRIVACY-DESIGN.md) — **Decided** data visibility architecture: channels, per-deal collections, event discipline, endorsement
 - [PLAN.md](PLAN.md) — Full phased build plan with all chaincode functions, routes, and timelines
 - BRD/SRS v1.1 (12 April 2026) — authoritative requirements document
 - Section numbers referenced throughout this file map directly to BRD sections

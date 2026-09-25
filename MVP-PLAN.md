@@ -211,12 +211,19 @@ Each ring is independently shippable. After every ring, the integration test mus
 - BRD mapping: Phase 6A
 - **Why third:** Closes the escrow happy-path with a sad-path. High BRD priority.
 
-### Ring 4 — All 3 PDCs (1–2 weeks)
-- `financingTermsPDC` (lender + supplier)
-- `escrowAmountsPDC` (buyer treasury)
-- `sanctionsResultPDC` (platform)
-- Move existing financing terms / escrow amount fields into PDCs
-- BRD mapping: NFR-06, BR-06
+### Ring 4 — Per-deal private collections (1–2 weeks)
+
+> **Superseded 25 Sep 2026 — see [PRIVACY-DESIGN.md](PRIVACY-DESIGN.md).** Role-scoped collections
+> leak between competing lenders/buyers once BR-10 (multi-lender, multi-supplier) is real.
+
+- Per-deal implicit collections (`_implicit_org_<MSPID>`) replace `financingTermsPDC`
+- `escrowAmountsPDC` retained (buyer org) + ABAC for "treasury only"
+- `sanctionsResultPDC` (platform) — unchanged
+- Channel public state reduced to index data: IDs, hashes, statuses, party org IDs, lien markers
+- Payloads written via transient data; `blockToLive: 0`
+- Strip commercial data from all chaincode event payloads (do this first — no retroactive fix)
+- Caller-party checks on every private-data read path
+- BRD mapping: NFR-06, BR-06, BR-10
 - **Why fourth:** Privacy story. Refactor easier with one slice working than mid-build.
 
 ### Ring 5 — Add lender + auditor channels (1–2 weeks)
@@ -381,7 +388,7 @@ full version.
 - **Rule-02 lock = finance-cc owns the lien + atomic cross-invoke**: `acceptOffer` writes `LOCK:<asset>` AND cross-invokes `trade-doc-cc` (`lockPO` / `assignInvoice`) in one tx, so the lien and the asset status commit together.
 - **Net-settlement math in the API service layer** (per plan), not the chaincode; chaincode records the resulting gross/net/repayment.
 - **Interest accrues over the agreed tenor** (deterministic for the demo: principal × rate × tenor/365), not wall-clock elapsed. Matches the example to the rupee (net ₹1,20,77,466).
-- **Financing terms on the main channel** for now; `financingTermsPDC` deferred to Ring 4.
+- **Financing terms on the main channel** for now; moved to per-deal private collections in Ring 4 ([PRIVACY-DESIGN.md](PRIVACY-DESIGN.md) — `financingTermsPDC` as originally specified is superseded).
 
 ### Block 5 — Escrow + Bridge (Polygon)
 - **Chain = Polygon CDK Supernet**; local dev = the Hardhat node (`coconet-hardhat`, chainId 31337).
