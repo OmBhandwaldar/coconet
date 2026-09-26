@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import supertest from 'supertest';
+import { authedRequest } from './helpers/authed-request.js';
 import app from '../app.js';
 import * as fabricService from '../fabric/fabric.service.js';
 import { FabricError } from '../errors/AppError.js';
 
-const request = supertest(app);
+const request = authedRequest();
 
 const validBody = {
   org_id: 'tata-001',

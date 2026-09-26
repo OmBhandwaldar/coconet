@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import supertest from 'supertest';
+import { authedRequest } from './helpers/authed-request.js';
 import app from '../app.js';
 import * as fabricService from '../fabric/fabric.service.js';
 import { computeNetSettlement } from '../services/finance.service.js';
 
-const request = supertest(app);
+const request = authedRequest();
 
 const preFR = {
   request_id: 'FR-PRE-001', product_type: 'PreShipment', asset_type: 'PO', asset_id: 'TM-PO-2024-0892',
