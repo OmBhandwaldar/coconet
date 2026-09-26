@@ -318,9 +318,32 @@ deal-scoped collections, endorsers must be deal parties — so a static chaincod
 "majority of orgs" becomes unsatisfiable once the network has more orgs than any single deal has
 parties.
 
-**Provisional decision:** Platform is a party to every deal and therefore always holds the data, so
-use **`PlatformMSP AND one-of(deal parties)`**. Always satisfiable however many orgs join. The cost
-is trust concentration in Platform, which the architecture already assumes.
+**Settled 27 September 2026, empirically.** The provisional `PlatformMSP AND one-of(deal parties)`
+does not survive contact with Fabric. Three things forced the answer:
+
+1. The gateway **will not disclose transient data to peers outside its own organisation** — a
+   buyer's submission failed with *"no endorsers found in the gateway's organization; retry
+   specifying endorsing organization(s) to protect transient data"*. Transient submissions must name
+   their endorsing org explicitly.
+2. Only the **owning org can endorse a write to its implicit collection**, and the canonical payload
+   lives in Platform's (§2.2.1). So Platform, and only Platform, can endorse these writes.
+3. With the default majority-of-orgs policy, a Platform-only endorsement then failed to commit with
+   `ENDORSEMENT_POLICY_FAILURE`.
+
+**The policy is therefore `OR('PlatformMSP.member')`** for every chaincode that writes private data —
+currently `trade-doc-cc`, and `finance-cc` because it cross-invokes it (a transaction must satisfy
+both chaincodes' policies, so they have to agree).
+
+**This is a real centralisation, and it should be stated plainly.** Trade documents and financing
+records are endorsed by one organisation. The *signature* on the transaction is still the acting
+user's, so attribution under NFR-05 holds — Rajesh's PO is signed by Rajesh — but the endorsement
+that makes it valid comes from Platform alone. A consortium member cannot independently verify a
+write by endorsing it.
+
+That is the price of platform-custodied private data (§2.2.1), and it is the same trade-off in a
+different guise: whoever holds the only copy is the only one who can attest to it. If the consortium
+needs independent endorsement, the route is party-held copies — each party endorsing writes to its
+own collection — which is the upgrade path §2.2.1 records.
 
 **Deferred deliberately, and safely.** Endorsement policy lives in the chaincode definition and
 changes with a sequence bump — no data migration. State-based endorsement (`setStateValidationParameter`,

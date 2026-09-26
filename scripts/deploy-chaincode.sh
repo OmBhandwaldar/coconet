@@ -25,6 +25,7 @@ while [[ $# -gt 0 ]]; do
         --dir)      CC_DIR="$2";    shift 2 ;;
         --version)  VERSION="$2";   shift 2 ;;
         --sequence) SEQUENCE="$2";  shift 2 ;;
+        --signature-policy) SIGNATURE_POLICY="$2"; shift 2 ;;
         --channel)  CHANNEL="$2";   shift 2 ;;
         *) echo "Unknown argument: $1" >&2; exit 1 ;;
     esac
@@ -121,12 +122,23 @@ for spec in "${ORGS[@]}"; do
     IFS='|' read -r _ msp _ _ <<< "$spec"
     write_step "Approving from $msp..."
     peer_env "$spec"
+# Endorsement policy. Chaincodes that write private data need one: the canonical
+# payload lives in the platform org's implicit collection and only that org can
+# endorse a write to it, so the default majority-of-orgs policy can never be
+# satisfied for those transactions (PRIVACY-DESIGN.md §2.2.1, §3.6).
+POLICY_FLAG=()
+if [[ -n "${SIGNATURE_POLICY:-}" ]]; then
+    POLICY_FLAG=(--signature-policy "$SIGNATURE_POLICY")
+    write_step "Endorsement policy: $SIGNATURE_POLICY"
+fi
+
     docker exec "${PEER_ENV[@]}" coconet-cli peer lifecycle chaincode approveformyorg \
         --channelID "$CHANNEL" \
         --name "$CC_NAME" \
         --version "$VERSION" \
         --package-id "$PKG_ID" \
         --sequence "$SEQUENCE" \
+        "${POLICY_FLAG[@]}" \
         --orderer orderer.coconet.local:7050 \
         --tls \
         --cafile "$ORDERER_CA" \
@@ -141,6 +153,7 @@ docker exec "${ENV_BUYER[@]}" coconet-cli peer lifecycle chaincode checkcommitre
     --name "$CC_NAME" \
     --version "$VERSION" \
     --sequence "$SEQUENCE" \
+        "${POLICY_FLAG[@]}" \
     --tls \
     --cafile "$ORDERER_CA" \
     --output json \
@@ -160,6 +173,7 @@ docker exec "${ENV_BUYER[@]}" coconet-cli peer lifecycle chaincode commit \
     --name "$CC_NAME" \
     --version "$VERSION" \
     --sequence "$SEQUENCE" \
+        "${POLICY_FLAG[@]}" \
     --orderer orderer.coconet.local:7050 \
     --tls \
     --cafile "$ORDERER_CA" \

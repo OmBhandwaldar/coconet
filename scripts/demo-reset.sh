@@ -46,8 +46,17 @@ bash scripts/setup-channel.sh
 
 step "Deploying chaincodes (fresh channel → sequence 1)..."
 bash scripts/deploy-chaincode.sh --name onboarding-cc --dir onboarding-cc --version 1.0 --sequence 1
-bash scripts/deploy-chaincode.sh --name trade-doc-cc  --dir trade-doc-cc  --version 1.5 --sequence 1
-bash scripts/deploy-chaincode.sh --name finance-cc    --dir finance-cc    --version 1.0 --sequence 1
+# trade-doc-cc writes private data to the platform org's implicit collection, and
+# only that org can endorse such a write — so a majority-of-orgs policy could
+# never commit. PRIVACY-DESIGN.md §2.2.1 explains why the canonical copy lives
+# there; the centralisation this implies is recorded in §3.6.
+bash scripts/deploy-chaincode.sh --name trade-doc-cc  --dir trade-doc-cc  --version 2.0 --sequence 1 \
+  --signature-policy "OR('PlatformMSP.member')"
+# finance-cc cross-invokes trade-doc-cc (the atomic Rule-02 lien lock), so a
+# transaction must satisfy both chaincodes' policies. They therefore have to
+# agree — see PRIVACY-DESIGN.md §3.6 for the centralisation this implies.
+bash scripts/deploy-chaincode.sh --name finance-cc    --dir finance-cc    --version 1.1 --sequence 1 \
+  --signature-policy "OR('PlatformMSP.member')"
 
 step "Deploying Polygon contracts (USDC + EscrowVault + EscrowFactory)..."
 ( cd contracts && npm run deploy:local )

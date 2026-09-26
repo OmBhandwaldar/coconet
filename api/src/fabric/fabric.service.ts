@@ -1,6 +1,7 @@
 import { Contract } from '@hyperledger/fabric-gateway';
 import { FabricError } from '../errors/AppError.js';
 import { logger } from '../config/logger.js';
+import { env } from '../config/env.js';
 import { getContract } from './gateway.js';
 
 const decoder = new TextDecoder('utf-8');
@@ -50,6 +51,13 @@ export async function invoke<T = unknown>(
  *
  * The payload is deliberately absent from the debug log below; logging it would
  * undo the point of sending it out of band.
+ *
+ * `endorsingOrganizations` is required, not optional. The gateway will not
+ * disclose transient data to peers outside its own organisation, so a buyer's
+ * submission would otherwise fail with "no endorsers found in the gateway's
+ * organization". The canonical payload lives in the platform org's implicit
+ * collection (PRIVACY-DESIGN.md §2.2.1), and only that org can endorse a write
+ * to it — so the platform MSP is named explicitly.
  */
 export async function invokeWithTransient<T = unknown>(
   ccName: string,
@@ -62,6 +70,7 @@ export async function invokeWithTransient<T = unknown>(
     c.submit(fn, {
       arguments: args,
       transientData: { payload: Buffer.from(JSON.stringify(transient)) },
+      endorsingOrganizations: [env.FABRIC_MSP_ID],
     }),
   );
 }
