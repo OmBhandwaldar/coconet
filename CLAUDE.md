@@ -88,7 +88,7 @@ This is a **dual-chain architecture**. Never mix responsibilities.
 
 | Contract | BRD Ref | Responsibility |
 |---|---|---|
-| `FundingManager.sol` | FR-ESC-02, Rule-0A | Prefunded / Reserved / CreditBacked funding |
+| `FundingManager.sol` | FR-ESC-02, Rule-0A | Prefunded / Reserved / CreditBacked funding — **not built; deferred, see [NEW-PLAN.md](NEW-PLAN.md) Deferred.** Prefunded is handled inline by `EscrowVault.sol` |
 | `EscrowFactory.sol` | FR-ESC-01, BR-12 | Create escrow payment instructions |
 | `ReleaseConditionEvaluator.sol` | FR-ESC-03, Rule-0B | Evaluate all release conditions |
 | `EscrowVault.sol` | FR-ESC-04, BR-12 | Hold, release, refund, reverse funds |
@@ -226,11 +226,14 @@ State transitions MUST be enforced at the chaincode/smart contract layer. Do not
 From BRD Section 26A. The platform must support all 3 funding models × 5 asset-link types = **15 combinations**. The buyer chooses both when creating the escrow.
 
 ### Funding Models (`funding_model` field)
-| Model | Meaning |
-|---|---|
-| **Prefunded** | Buyer deposits real cash into escrow vault at creation |
-| **Reserved** | Buyer earmarks funds in treasury — no cash moved until release |
-| **CreditBacked** | Bank guarantee / credit line backs the escrow — no cash moved |
+| Model | Meaning | Status |
+|---|---|---|
+| **Prefunded** | Buyer deposits real cash into escrow vault at creation | Implemented |
+| **Reserved** | Buyer earmarks funds in treasury — no cash moved until release | **Deferred** — [NEW-PLAN.md](NEW-PLAN.md) |
+| **CreditBacked** | Bank guarantee / credit line backs the escrow — no cash moved | **Deferred** — [NEW-PLAN.md](NEW-PLAN.md) |
+
+> The 15 funding-model × asset-link combinations below describe the BRD target. Current scope is
+> **Prefunded × Invoice only**; the other two models and `FundingManager.sol` are deferred.
 
 ### Linked Asset Types (`linked_asset_type` field)
 | Type | Escrow Created When |
@@ -519,7 +522,7 @@ Don't chase 100%. Chase: "if I broke something important, the test would catch i
 6. **Don't invent fields not in the BRD.** If a field is needed but missing from the BRD, flag it — do not silently add it.
 7. **Don't add tokenization logic.** RDM token is future phase.
 8. **Don't use Go, Java, or any non-TypeScript language** for chaincode or API.
-9. **Don't mix funding models.** An escrow is Prefunded OR Reserved OR CreditBacked — never two.
+9. **Don't mix funding models.** An escrow is Prefunded OR Reserved OR CreditBacked — never two. (Only **Prefunded** is in scope today; the other two are deferred — [NEW-PLAN.md](NEW-PLAN.md).)
 10. **Don't skip sanctions screening** at any of the 5 required checkpoints.
 
 ---

@@ -113,10 +113,10 @@ Resulting visibility:
 | Tata | full payload | ID + status only |
 | Mahindra | ID + status only | full payload |
 | Bharat | full payload | full payload (party to both) |
-| HDFC | full payload | sees asset is liened; not by whom, not at what rate |
-| ICICI | sees asset is liened | full payload |
+| HDFC | full payload | sees the asset is liened, by which deal and party orgs (public index, §2.1); not the rate, amount or terms |
+| ICICI | sees the asset is liened, by which deal and party orgs; not the rate, amount or terms | full payload |
 | Platform | full payload | full payload |
-| Auditor | full read via replicated audit records | full read |
+| Auditor | full read of the audit record — every action, actor, hash and timestamp — but NOT collection payloads it was never a member of (§5) | same |
 
 ### 2.3 Collections are per chaincode namespace
 
@@ -149,8 +149,10 @@ chaincode namespace."* See §4 for how cross-chaincode reads are done correctly.
 
 ### 3.1 `blockToLive: 0` — never purge
 
-Set on every collection carrying audit-relevant data. The default purges private data after N
-blocks, which would destroy the evidence trail NFR-05 requires.
+Set explicitly on every collection carrying audit-relevant data. `0` means never purge; any
+non-zero value purges the private data after that many blocks, which would destroy the evidence
+trail NFR-05 requires. Fabric's docs do not state a default for an omitted `blockToLive`, so set it
+explicitly rather than relying on one.
 
 **This is irreversible.** `blockToLive` cannot be modified on an existing collection — Fabric
 requires a consistent value regardless of a peer's block height. It must be correct at creation.
@@ -289,8 +291,12 @@ changes with a sequence bump — no data migration. State-based endorsement (`se
 available in the shim already in use) can pin a per-deal policy to individual keys later. Settle this
 at the deployment where collections first go live, when the real org set is known.
 
-Collection-level `endorsementPolicy` can override the chaincode-level policy and restrict endorsers
-to collection members; that is the mechanism to reach for if the provisional policy proves too coarse.
+**How it is actually expressed.** `PlatformMSP AND one-of(deal parties)` cannot be written as a
+static chaincode-level policy — the party set differs per deal, which is the same unsatisfiability
+described above. It must be realised either as a collection-level `endorsementPolicy` (which
+overrides the chaincode-level policy and restricts endorsers to collection members) or as
+state-based endorsement pinned per key. Treat the phrase as the *intent*; the mechanism is one of
+those two, chosen at first collections deployment.
 
 ---
 
@@ -308,6 +314,18 @@ value returns to `finance-cc` in the response.
 
 The narrower restriction in §2.3 still applies: `finance-cc` must go *through* `trade-doc-cc`, and
 may not address `trade-doc-cc`'s collections directly.
+
+**Both paths assume one channel, and that assumption has an expiry date.** `CHANNEL` is hardcoded in
+`finance-cc` and today every chaincode lives on `buyer-supplier-channel`. Adding `lender-channel`
+breaks this: `InvokeChaincode` across channels returns only the Response and **any `PutState` from
+the called chaincode is discarded**. `crossInvoke`
+([finance.chaincode.ts:296](chaincodes/finance-cc/src/finance.chaincode.ts#L296)) is the
+state-changing path — it carries the atomic Rule-02 lien lock, writing `LOCK:<asset>` and
+cross-invoking `lockPO`/`assignInvoice` in one transaction so the lien and the asset status commit
+together. **That atomicity cannot survive a channel split.** Before `finance-cc` moves to
+`lender-channel`, decide one of: keep both chaincodes co-channel, move the lien to an event-driven
+saga with compensation, or keep the asset-status write in `trade-doc-cc`'s own transaction. Open
+question, owned by the channel-separation work.
 
 ### 4.1 Consequence — collections are not access control
 
@@ -359,14 +377,14 @@ Platform Admin ([api/src/fabric/gateway.ts](api/src/fabric/gateway.ts)).
 |---|---|
 | `trade-doc-cc` | Split writes: index to public state, payload to party implicit collections via transient data. Add caller-party checks on every getter. Strip event payloads. |
 | `finance-cc` | Same split. Financing terms move off the main channel — this closes the known gap logged in MVP-PLAN Block 4. `crossQuery` unchanged (§4). |
-| `onboarding-cc` | Minimal. Org records are legitimately network-wide; sanctions results already platform-only. |
+| `onboarding-cc` | Small but not zero. Org records are legitimately network-wide, but the risk tier and maker-checker threshold are not (scrubbed from events in Block 1; the stored values still need read-path scoping). `sanctionsResultPDC` has **no implementation at all** — no sanctions code exists anywhere in the repo — so §2.4's row for it describes intent, not state. |
 | `provenance-cc`, `dispute-cc`, `audit-cc` | **Not yet written — build to this design from the start.** Retrofitting is the expensive path. |
 | `api/src/services/*` | Pass payloads as transient data; **generate a 128-bit CSPRNG salt per private item** (§3.3); read as the requesting org rather than as Platform. |
 | `activity-feed.service.ts` | Per-org filtering; stop serving one global feed. |
 | `scripts/deploy-chaincode.sh` | No `--collections` flag today. Needs collection config and per-collection endorsement policy support. |
 | Chaincode unit tests | Mock stub needs `getPrivateData`, `putPrivateData`, `getTransient`. |
 | API integration tests | Chains are mocked; expected to survive unchanged. |
-| MongoDB / PostgreSQL | Partition per org (§3.3). |
+| MongoDB / PostgreSQL | Partition per org (§3.5). |
 
 ---
 
@@ -403,7 +421,7 @@ cheaper than after; all three would otherwise need rewriting.
 - Caller-party checks mandatory on every private-data read path.
 
 **Open:**
-- Final endorsement policy shape (provisional in §3.4).
+- Final endorsement policy shape (provisional in §3.6).
 - Exact ABAC attribute taxonomy, pending Fabric CA work.
 - Whether auditor records are replicated by the bridge, by `audit-cc`, or by a dedicated service.
 - Whether `escrowAmountsPDC` needs value-level encryption to make "treasury only" a hard boundary (§3.4).

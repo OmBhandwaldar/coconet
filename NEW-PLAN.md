@@ -14,7 +14,7 @@ Block 4 implements.
 | Block | Scope | Branch | Status |
 |---|---|---|---|
 | 0 | Setup | `feat/harden-00-setup` | [x] Done |
-| 1 | Event payload scrub | `feat/harden-01-events` | [ ] Not started |
+| 1 | Event payload scrub | `feat/harden-01-events` | [x] Done |
 | 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [ ] Not started |
 | 3 | Identity & access | `feat/harden-03-identity` | [ ] Not started |
 | 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [ ] Not started |
@@ -39,7 +39,7 @@ What it is not is production-ready. Verified against the code:
 
 - **No authentication at all** — no `auth` or `rbac` middleware; anyone reaching port 3000 can issue a PO or release an escrow.
 - **Every ledger action is attributed to one hardcoded Platform Admin**, so the audit trail cannot satisfy NFR-05.
-- **Financing terms sit on the shared channel**, violating NFR-06 — and 9 chaincode events leak amounts and quantities to every channel member, permanently.
+- **Financing terms sit on the shared channel**, violating NFR-06 — and 13 chaincode event payloads leaked amounts, quantities or free-text figures to every channel member, permanently (fixed in Block 1).
 - **Maker-checker thresholds are stored but never enforced** (`"storage only — Ring 11 enforces"`).
 - **The bridge has no checkpointing, retries or HA story** — a failed cross-chain write is silently lost.
 - Three of six chaincodes and two of four contracts do not exist.
@@ -77,7 +77,9 @@ settlement and audited contracts.
 > **Highest priority in the entire plan — the only item with no retroactive fix.** Chaincode events
 > reach every channel member and are immutable. A rate emitted into block 500 is leaked forever.
 
-Nine events currently carry commercial values:
+Thirteen event payloads carried commercial values. The first pass of this table listed only
+the numeric fields; reading the code found three more that leak through **free text**, which a
+key-name grep can never catch:
 
 | Chaincode | Event | Leaking field |
 |---|---|---|
@@ -90,9 +92,11 @@ Nine events currently carry commercial values:
 | finance-cc | `FinanceApproved` | `approved_amount` |
 | finance-cc | `FinanceDisbursed` | `disbursed_amount`, `net_disbursed` |
 | finance-cc | `FinanceRepaid` | `amount` |
-
-Also review `InvoiceRejected` / `InvoiceDisputed` (free-text `reason` can contain anything) and
-onboarding's maker-checker threshold event (reveals an org's approval limits).
+| trade-doc-cc | `InvoiceMatchFailed` | `reasons` — *"Invoice amount 24750000 exceeds PO gross_value 25000000"*, i.e. **both documents' figures in free text** |
+| trade-doc-cc | `InvoiceRejected` / `InvoiceDisputed` | caller-supplied free-text `reason` — can contain anything |
+| finance-cc | `FinanceEligibilityPassed` / `Failed` | `reasons` free text |
+| onboarding-cc | `MakerCheckerThresholdSet` | `threshold` — the amount an org waves through on one signature |
+| onboarding-cc | `RiskTierAssigned` | `risk_tier` — the platform's credit judgement of a member |
 
 **Verified safe:** the only consumers read ID fields — the bridge uses `payload.invoice_id`
 ([api/src/services/bridge.service.ts](api/src/services/bridge.service.ts)) and the activity feed uses
@@ -106,8 +110,15 @@ onboarding's maker-checker threshold event (reveals an org's approval limits).
 **Commits:** one per chaincode · `test: assert no commercial fields in event payloads` (a guard test
 enumerating every event and asserting its payload key set) · `docs: record event payload contract`
 
-**Verify:** chaincode unit tests green · `npm run demo:reset && npm run demo` green · grepping every
-`setEvent` payload for amount/qty/price/rate keys returns nothing.
+**Verify:** chaincode unit tests green · `npm run demo:reset && npm run demo` green ·
+`npx tsx scripts/dump-events.ts` replays **committed** events off the ledger and fails on any
+commercial key. A key-name grep of the source is NOT sufficient — it passes while `reasons` free
+text still carries the figures, which is exactly the leak it exists to catch.
+
+**Outcome:** 7 commits. 13 payloads scrubbed; free text banned from events outright (a standing rule,
+PRIVACY-DESIGN.md §3.2.1); whitelist guard tests per chaincode so an unlisted key fails the build;
+verified against the chain — 16 distinct committed events, none carrying commercial data. A
+pre-existing failing API test (stale `createGRN` assertion) was fixed in its own commit.
 
 ---
 
@@ -288,13 +299,13 @@ notification adapters · idempotent inbound webhooks with replay protection.
 
 ## Deferred — NOT implemented in this plan
 
-Decided 26 September 2026. All four are BRD §5 in-scope; they are deferred deliberately, not
-overlooked. CLAUDE.md §2 requires that nothing in BRD scope be silently omitted — this table is that
+Decided 26 September 2026. All four are in BRD scope — the three finance products under §5, the
+funding models under §26A — and are deferred deliberately, not overlooked. CLAUDE.md §2 requires that nothing in BRD scope be silently omitted — this table is that
 record.
 
 | Item | Why it is safe to defer |
 |---|---|
-| **Reserved and CreditBacked funding models** (`FundingManager.sol`) | The contract exists only for these two models, so it drops from the plan entirely, along with the treasury and credit-line integrations they require. Prefunded escrow is unaffected. |
+| **Reserved and CreditBacked funding models** (`FundingManager.sol`) | BRD §26A. The contract exists only for these two models, so it drops from the plan entirely, along with the treasury and credit-line integrations they require. Prefunded escrow is unaffected. **CLAUDE.md §4, §11 and §20 rule 9 describe all three models as current scope and are annotated to point here.** |
 | **Sanctions screening** | No code exists today. Block 8's `ReleaseConditionEvaluator` will therefore evaluate 5 live conditions with the sanctions input **stubbed to `true`**, explicitly marked as a stub in code and docs. **This is the one deferral carrying regulatory exposure** — it must not reach a real counterparty unresolved. |
 | **Post-shipment finance** | Independent product; nothing else depends on it. |
 | **Dealer / distributor financing** | The most isolated of all, and the only product where the *buyer* borrows — it would force a role-model change in `onboarding-cc` plus dealer-to-lender repayment tracking needed nowhere else. |
