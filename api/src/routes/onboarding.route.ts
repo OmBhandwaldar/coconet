@@ -29,8 +29,14 @@ router.put(
   validate(setMakerCheckerThresholdSchema),
   controller.setMakerCheckerThreshold,
 );
+// The threshold is the amount above which an org needs a second signature.
+// Block 1 removed it from chaincode events precisely because publishing it tells
+// every counterparty how large a transaction that org waves through unchecked —
+// serving it from the read API to any authenticated member would reopen exactly
+// that exposure. Platform only.
 router.get(
   '/organizations/:id/maker-checker-thresholds/:txType',
+  platform,
   validate(getMakerCheckerThresholdSchema),
   controller.getMakerCheckerThreshold,
 );

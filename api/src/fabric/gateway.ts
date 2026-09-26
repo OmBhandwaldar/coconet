@@ -99,9 +99,13 @@ function gatewayForCaller(): Gateway {
   const [user, orgKey] = label.split('@');
   const org = ORG_PROFILES.find((o) => o.key === orgKey);
   if (!org || !identityExists(org, user)) {
-    logger.warn({ label }, 'No wallet material for caller — falling back to the platform identity');
-    if (!gateway) throw new Error('Fabric Gateway not connected. Call connectGateway() first.');
-    return gateway;
+    // FAIL CLOSED. Falling back to the platform identity here would sign an
+    // authenticated user's transaction under PlatformMSP — an identity that
+    // passes every RBAC guard and, once Blocks 4 and 5 land, every
+    // caller-party and checker!=maker check enforced in chaincode. A missing
+    // or mistyped wallet entry must be an error, never a privilege upgrade.
+    logger.error({ label }, 'No wallet material for caller — refusing to sign');
+    throw new Error(`No Fabric identity provisioned for '${label}'`);
   }
 
   const { identity, signer } = materialFor(label);

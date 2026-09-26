@@ -75,11 +75,35 @@ function buildDirectory(): Map<string, DirectoryUser> {
 
 const directory = buildDirectory();
 
-/** Refuse to run on well-known development credentials outside development. */
+// JWT secrets shipped as placeholders. If one of these is in use, the deployment
+// has not been configured, whatever NODE_ENV claims.
+const PLACEHOLDER_JWT_SECRETS = new Set([
+  'change-me-in-production',
+  'test-secret-at-least-16-chars',
+]);
+
+/**
+ * Refuse to run on well-known development credentials.
+ *
+ * NODE_ENV defaults to 'development', so keying only on NODE_ENV === 'production'
+ * means a deploy that simply forgets to set it comes up with this directory and
+ * its published secrets live. The JWT secret is checked as a second, independent
+ * signal of an unconfigured deployment.
+ */
 export function assertSafe(): void {
-  if (env.NODE_ENV === 'production' && !env.AUTH_USERS) {
+  if (env.AUTH_USERS) return;
+
+  if (env.NODE_ENV === 'production') {
     throw new Error(
       'AUTH_USERS must be set in production — refusing to start with the development user directory.',
+    );
+  }
+
+  if (env.NODE_ENV !== 'test' && !PLACEHOLDER_JWT_SECRETS.has(env.JWT_SECRET)) {
+    // A real JWT secret with no user directory means this is not a dev box.
+    throw new Error(
+      'A non-placeholder JWT_SECRET is set but AUTH_USERS is not. Refusing to start the ' +
+      'development user directory (published secrets) against what looks like a real deployment.',
     );
   }
 }

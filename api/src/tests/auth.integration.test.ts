@@ -131,3 +131,34 @@ describe('identity is carried to the chain layer', () => {
     expect(res.body.data.wallet_label).toBe('User2@buyer');
   });
 });
+
+// ─── security-review follow-ups ───────────────────────────────────────────────
+describe('sensitive organisation fields', () => {
+  async function tokenFor(username: string) {
+    const res = await request.post('/api/auth/login').send({ username, secret: `${username}-dev-secret` });
+    return res.body.data.token as string;
+  }
+
+  // Block 1 stripped risk_tier and the maker-checker threshold from chaincode
+  // events because publishing them tells a member's competitors how the platform
+  // rates it and how large a transaction it waves through on one signature. The
+  // read API must not hand back what the event scrub removed.
+  it('hides risk tier and thresholds from another member', async () => {
+    const token = await tokenFor('kavitha'); // supplier reading the buyer's org
+    const res = await request
+      .get('/api/onboarding/organizations/tata-001')
+      .set('Authorization', `Bearer ${token}`);
+    if (res.status === 200) {
+      expect(res.body.data).not.toHaveProperty('risk_tier');
+      expect(res.body.data).not.toHaveProperty('maker_checker_thresholds');
+    }
+  });
+
+  it('forbids a member from reading another org maker-checker threshold', async () => {
+    const token = await tokenFor('kavitha');
+    const res = await request
+      .get('/api/onboarding/organizations/tata-001/maker-checker-thresholds/PurchaseOrder')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(403);
+  });
+});
