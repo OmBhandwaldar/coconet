@@ -15,7 +15,7 @@ Block 4 implements.
 |---|---|---|---|
 | 0 | Setup | `feat/harden-00-setup` | [x] Done |
 | 1 | Event payload scrub | `feat/harden-01-events` | [x] Done |
-| 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [ ] Not started |
+| 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [x] Done |
 | 3 | Identity & access | `feat/harden-03-identity` | [ ] Not started |
 | 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [ ] Not started |
 | 5 | Maker-checker | `feat/harden-05-maker-checker` | [ ] Not started |
@@ -254,7 +254,8 @@ CI/CD pipeline · production Dockerfile (the API runs under `tsx watch`) · Prom
 Mongo, MinIO and peer private state DBs · MongoDB replica set with auth · MinIO policies, versioning,
 object-lock · PostgreSQL reporting, partitioned per org · backup/restore with tested RTO/RPO ·
 idempotency keys (BRD §28) · richer error taxonomy · OpenAPI spec from the zod schemas · event
-emission sweep.
+emission sweep · **ESLint config** (the root `lint` script exists but no config file does, so it
+errors out; CI skips it deliberately until this lands).
 
 **Commits:** ~14 small, one per concern.
 
