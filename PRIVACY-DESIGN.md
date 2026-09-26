@@ -205,6 +205,45 @@ Rules:
 - This applies to **every** collection carrying guessable data: per-deal payloads,
   `escrowAmountsPDC`, and `sanctionsResultPDC` (a boolean pass/fail is maximally guessable).
 
+#### 3.2.1 The implemented contract
+
+Enforced by a whitelist guard test per chaincode (`src/event-payload.test.ts`). A key nobody listed
+fails the build — deliberately, so a field added later by someone who has not read this document
+cannot leak silently.
+
+| Chaincode | Allowed event payload keys |
+|---|---|
+| `trade-doc-cc` | `po_id`, `grn_id`, `invoice_id`, `buyer_id`, `supplier_id`, `assigned_to`, `status`, `doc_hash`, `changed_fields`, `failed_checks` |
+| `finance-cc` | `request_id`, `asset_id`, `asset_type`, `product_type`, `lender_id`, `status`, `failed_checks` |
+| `onboarding-cc` | `org_id`, `org_type`, `msp_id`, `status`, `role`, `tx_type` |
+
+Removed in the Block 1 scrub (NEW-PLAN.md):
+
+| Event | Was carrying |
+|---|---|
+| `POCreated` | `gross_value` |
+| `POAmended` | `changes` — the amended values themselves; now `changed_fields`, the names only |
+| `GRNCreated` | `received_qty` |
+| `GRNAccepted` | `accepted_qty` |
+| `InvoiceSubmitted` | `amount` |
+| `InvoiceRevised` | `amount`, `quantity` |
+| `InvoiceMatchFailed` | `reasons` — free text of the form *"Invoice amount 24750000 exceeds PO gross_value 25000000"*, i.e. both documents' figures; now `failed_checks` |
+| `InvoiceRejected` / `InvoiceDisputed` | caller-supplied free-text `reason` |
+| `FinanceApproved` | `approved_amount` |
+| `FinanceDisbursed` | `disbursed_amount`, `net_disbursed` |
+| `FinanceRepaid` | `amount` |
+| `FinanceEligibilityPassed` / `Failed` | `reasons` free text; now `failed_checks` |
+| `MakerCheckerThresholdSet` | `threshold` — the amount above which an org needs a second signature |
+| `RiskTierAssigned` | `risk_tier` — the platform's credit judgement of a member |
+
+**Two standing rules that follow from this:**
+
+1. **No free text in an event, ever.** Reason and justification strings are caller-supplied or
+   built from document figures; both stay in state. Events carry check *names*, not explanations.
+2. **Consumers may depend on identifiers only.** The bridge reads `invoice_id` and the activity feed
+   derives the deal code from the entity id — both hold under this contract. Anything needing a
+   figure must read state as an entitled party, never listen for it.
+
 ### 3.4 No application-level encryption — of channel state or collection payloads
 
 Decided explicitly, because it is the obvious next question after §3.3 and the answer is not "more
