@@ -538,6 +538,7 @@ Don't chase 100%. Chase: "if I broke something important, the test would catch i
 
 ## 22. Key References
 
+- [NEW-PLAN.md](NEW-PLAN.md) — Production hardening plan: 13 blocks from the MVP to pilot readiness, executed on `develop-more`
 - [PRIVACY-DESIGN.md](PRIVACY-DESIGN.md) — **Decided** data visibility architecture: channels, per-deal collections, event discipline, endorsement
 - [PLAN.md](PLAN.md) — Full phased build plan with all chaincode functions, routes, and timelines
 - BRD/SRS v1.1 (12 April 2026) — authoritative requirements document
