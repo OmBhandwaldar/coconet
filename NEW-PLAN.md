@@ -16,7 +16,7 @@ Block 4 implements.
 | 0 | Setup | `feat/harden-00-setup` | [x] Done |
 | 1 | Event payload scrub | `feat/harden-01-events` | [x] Done |
 | 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [x] Done |
-| 3 | Identity & access | `feat/harden-03-identity` | [ ] Not started |
+| 3 | Identity & access | `feat/harden-03-identity` | [~] Mostly done — Fabric CA outstanding |
 | 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [ ] Not started |
 | 5 | Maker-checker | `feat/harden-05-maker-checker` | [ ] Not started |
 | 6 | Bridge durability | `feat/harden-06-bridge` | [ ] Not started |
@@ -152,6 +152,30 @@ pre-existing failing API test (stale `createGRN` assertion) was fixed in its own
 **Commits:** ~10 small — CA compose, enrollment service, wallet, JWT middleware, RBAC middleware, per-org gateway cache, ABAC attributes, secrets provider, route wiring, docs.
 
 **Verify:** `security-review` · unauthenticated request rejected · supplier token cannot approve a buyer invoice · demo green with real per-user identities.
+
+**Outcome (partial).** Landed: JWT login with scrypt-hashed secrets and
+enumeration-resistant failure; RBAC mounted once in `routes/index.ts` so a new
+router is protected by default; per-route authorisation across trade, finance,
+escrow and onboarding; auditor blocked from every mutating verb globally; a
+caller identity context (`AsyncLocalStorage`) tested across await boundaries and
+concurrent callers; **per-MSP endorsement** — a demo run opens six distinct
+signing identities across four MSPs, so a ledger entry is attributable to a
+person and an org rather than to Platform Admin; and a secrets provider that
+prefers `<NAME>_FILE`, warns on env-sourced secrets in production and refuses
+publicly known development keys outright.
+
+**Still outstanding — Fabric CA.** Identities come from the cryptogen material
+already in the repo, not from CA enrollment. `api/src/auth/wallet.ts` is the seam
+it plugs into: CA enrollment replaces where entries come from without changing
+the middleware, RBAC or the gateway. Standing the CA up means regenerating
+identity material and re-creating the channel, so it is deliberately a separate
+change. Until it lands:
+
+- users cannot be enrolled or revoked at runtime — the directory is static
+- ABAC attributes (`dept=treasury`) have nowhere to be asserted, so the
+  user-level half of PRIVACY-DESIGN.md §6 remains open
+- the cryptogen keys on disk are the signing material, which is acceptable for a
+  demonstrator and not for production
 
 ---
 
