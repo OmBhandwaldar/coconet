@@ -8,10 +8,25 @@ export type InvoiceStatus =
   | 'Draft' | 'Submitted' | 'Matched' | 'Approved' | 'Eligible'
   | 'Assigned' | 'Settled' | 'Disputed' | 'Closed';
 
-export interface PurchaseOrder {
+// ─── Public index vs private payload (PRIVACY-DESIGN.md §2.1) ────────────────
+// Channel public state carries only what rules and cross-chain correlation need:
+// identifiers, parties, status, document hashes. Every commercial figure lives in
+// the private collection, so a channel member who is not party to the deal can
+// see that it exists but not what it is worth.
+export interface POIndex {
   po_id: string;
   buyer_id: string;
   supplier_id: string;
+  /** MSPs entitled to the payload. Checked on every private read (§4.1). */
+  party_msps: string[];
+  doc_hash?: string;
+  status: POStatus;
+  amendment_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface POPrivate {
   currency: string;
   gross_value: number;
   item_description: string;
@@ -19,12 +34,14 @@ export interface PurchaseOrder {
   price_per_unit: number;
   delivery_terms: string;
   payment_terms: string;
-  doc_hash?: string;
-  status: POStatus;
-  amendments: { changes: Record<string, unknown>; justification: string; at: string }[];
-  created_at: string;
-  updated_at: string;
+  amendments: { changed_fields: string[]; changes: Record<string, unknown>; justification: string; at: string }[];
+  /** 128-bit client-generated salt — without it the public hash of a round
+   *  figure is recoverable by brute force (PRIVACY-DESIGN.md §3.3). */
+  salt: string;
 }
+
+/** The merged view returned to an entitled caller. */
+export type PurchaseOrder = POIndex & Partial<POPrivate>;
 
 export interface GoodsReceipt {
   grn_id: string;
@@ -102,22 +119,34 @@ export class TradeDocChaincode extends Contract {
 
   // ═══ Purchase Orders ════════════════════════════════════════════════════════
 
+  /**
+   * Identifiers, parties and status are passed as arguments and land on the
+   * channel. Every commercial figure arrives as transient data and lands only
+   * in the private collection, so it never appears in the transaction proposal
+   * that endorsers and the orderer see.
+   */
   @Transaction()
   async createPO(ctx: Context, poJson: string): Promise<string> {
-    const input = JSON.parse(poJson) as Partial<PurchaseOrder>;
+    const input = JSON.parse(poJson) as Partial<POIndex>;
+    const priv = this.transientPayload<Partial<POPrivate>>(ctx);
 
     if (!input.po_id) throw new Error('po_id is required');
     if (!input.buyer_id) throw new Error('buyer_id is required');
     if (!input.supplier_id) throw new Error('supplier_id is required');
-    if (!input.currency) throw new Error('currency is required');
-    if (input.gross_value === undefined) throw new Error('gross_value is required');
-    if (input.quantity === undefined) throw new Error('quantity is required');
-    if (input.price_per_unit === undefined) throw new Error('price_per_unit is required');
-    if (!input.item_description) throw new Error('item_description is required');
+    if (!input.party_msps?.length) throw new Error('party_msps is required');
+    if (!priv.currency) throw new Error('currency is required');
+    if (priv.gross_value === undefined) throw new Error('gross_value is required');
+    if (priv.quantity === undefined) throw new Error('quantity is required');
+    if (priv.price_per_unit === undefined) throw new Error('price_per_unit is required');
+    if (!priv.item_description) throw new Error('item_description is required');
+    if (!priv.salt) throw new Error('salt is required — predictable private data is brute-forceable');
 
-    if (!(input.gross_value > 0)) throw new Error('gross_value must be positive');
-    if (!(input.quantity > 0)) throw new Error('quantity must be positive');
-    if (!(input.price_per_unit > 0)) throw new Error('price_per_unit must be positive');
+    if (!(priv.gross_value > 0)) throw new Error('gross_value must be positive');
+    if (!(priv.quantity > 0)) throw new Error('quantity must be positive');
+    if (!(priv.price_per_unit > 0)) throw new Error('price_per_unit must be positive');
+
+    // The submitter cannot write a deal it is not part of.
+    this.assertParty(ctx, input.party_msps, `purchase order ${input.po_id}`);
 
     if (await this.exists(ctx, this.poKey(input.po_id))) {
       throw new Error(`Purchase order ${input.po_id} already exists`);
@@ -125,30 +154,36 @@ export class TradeDocChaincode extends Contract {
     if (input.doc_hash) await this.registerDocHash(ctx, input.doc_hash, 'PO', input.po_id);
 
     const now = this.txTimestamp(ctx);
-    const po: PurchaseOrder = {
+    const index: POIndex = {
       po_id: input.po_id,
       buyer_id: input.buyer_id,
       supplier_id: input.supplier_id,
-      currency: input.currency,
-      gross_value: input.gross_value,
-      item_description: input.item_description,
-      quantity: input.quantity,
-      price_per_unit: input.price_per_unit,
-      delivery_terms: input.delivery_terms ?? '',
-      payment_terms: input.payment_terms ?? '',
+      party_msps: input.party_msps,
       doc_hash: input.doc_hash,
-      status: 'Issued', // maker-checker is storage-only until Ring 11
-      amendments: [],
+      status: 'Issued', // maker-checker is storage-only until Block 5
+      amendment_count: 0,
       created_at: now,
       updated_at: now,
     };
+    const payload: POPrivate = {
+      currency: priv.currency,
+      gross_value: priv.gross_value,
+      item_description: priv.item_description,
+      quantity: priv.quantity,
+      price_per_unit: priv.price_per_unit,
+      delivery_terms: priv.delivery_terms ?? '',
+      payment_terms: priv.payment_terms ?? '',
+      amendments: [],
+      salt: priv.salt,
+    };
 
-    await ctx.stub.putState(this.poKey(po.po_id), Buffer.from(JSON.stringify(po)));
+    await ctx.stub.putState(this.poKey(index.po_id), Buffer.from(JSON.stringify(index)));
+    await this.putPrivate(ctx, this.poKey(index.po_id), payload);
     ctx.stub.setEvent('POCreated', Buffer.from(JSON.stringify({
-      po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id,
-      status: po.status, doc_hash: po.doc_hash,
+      po_id: index.po_id, buyer_id: index.buyer_id, supplier_id: index.supplier_id,
+      status: index.status, doc_hash: index.doc_hash,
     })));
-    return JSON.stringify(po);
+    return JSON.stringify({ ...index, ...payload });
   }
 
   @Transaction()
@@ -183,13 +218,31 @@ export class TradeDocChaincode extends Contract {
       }
     }
     po.status = 'Amended';
-    po.amendments.push({ changes: applied, justification, at: this.txTimestamp(ctx) });
     po.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.poKey(poId), Buffer.from(JSON.stringify(po)));
+
+    // The amended VALUES are commercial data: they go to the private payload.
+    // Public state records only that an amendment happened.
+    const priv = (await this.getPrivate<POPrivate>(ctx, this.poKey(poId)));
+    if (!priv) throw new Error(`Private payload for ${poId} is not readable on this peer`);
+    for (const [k, v] of Object.entries(applied)) (priv as unknown as Record<string, unknown>)[k] = v;
+    priv.amendments.push({
+      changed_fields: Object.keys(applied), changes: applied,
+      justification, at: this.txTimestamp(ctx),
+    });
+    await this.putPrivate(ctx, this.poKey(poId), priv);
+
+    const index: POIndex = {
+      po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id,
+      party_msps: po.party_msps, doc_hash: po.doc_hash, status: po.status,
+      amendment_count: priv.amendments.length,
+      created_at: po.created_at, updated_at: po.updated_at,
+    };
+    await ctx.stub.putState(this.poKey(poId), Buffer.from(JSON.stringify(index)));
     ctx.stub.setEvent('POAmended', Buffer.from(JSON.stringify({
       po_id: poId, status: po.status, changed_fields: Object.keys(applied),
     })));
-    return JSON.stringify(po);
+    // Return the merged view the caller expects — index plus the amended payload.
+    return JSON.stringify({ ...index, ...priv });
   }
 
   @Transaction()
@@ -210,7 +263,11 @@ export class TradeDocChaincode extends Contract {
   @Transaction(false)
   @Returns('string')
   async getPurchaseOrder(ctx: Context, poId: string): Promise<string> {
-    return JSON.stringify(await this.getPO(ctx, poId));
+    const index = await this.getPOIndex(ctx, poId);
+    // A non-party sees that the order exists and its status — never its value.
+    if (!this.isParty(ctx, index.party_msps)) return JSON.stringify(index);
+    const priv = await this.getPrivate<POPrivate>(ctx, this.poKey(poId));
+    return JSON.stringify({ ...index, ...(priv ?? {}) });
   }
 
   // ═══ Goods Receipt (minimal) ════════════════════════════════════════════════
@@ -340,9 +397,14 @@ export class TradeDocChaincode extends Contract {
       reasons.push(`GRN ${grn!.grn_id} is not linked to PO ${po!.po_id}`);
     }
 
-    const amount_within_po = po_link ? invoice.amount <= po!.gross_value : false;
+    // gross_value lives in the private payload; if this peer cannot read it the
+    // match cannot be decided here rather than silently passing.
+    if (po_link && po!.gross_value === undefined) {
+      throw new Error(`PO ${invoice.po_id} private payload is not readable on this peer — cannot match`);
+    }
+    const amount_within_po = po_link ? invoice.amount <= po!.gross_value! : false;
     if (po_link && !amount_within_po) {
-      reasons.push(`Invoice amount ${invoice.amount} exceeds PO gross_value ${po!.gross_value}`);
+      reasons.push(`Invoice amount exceeds PO gross value`);
     }
 
     const acceptedQty = grn_link ? (grn!.accepted_qty ?? 0) : 0;
@@ -466,6 +528,57 @@ export class TradeDocChaincode extends Contract {
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+  // ─── Private data plumbing (PRIVACY-DESIGN.md §2.2.1) ─────────────────────
+  // The canonical payload lives in the platform org's implicit collection.
+  // Implicit collections are endorsed and read by their own org only, so a
+  // payload spread across every party's collection would need all of them to
+  // endorse each write and would make chaincode reads non-deterministic across
+  // endorsers. Platform is party to every deal, so one canonical copy keeps
+  // logic deterministic while non-parties still never receive the bytes.
+  private readonly PRIVATE_COLLECTION = '_implicit_org_PlatformMSP';
+
+  /** Read the payload the caller supplied out-of-band, never as an argument. */
+  private transientPayload<T>(ctx: Context, key = 'payload'): T {
+    const transient = ctx.stub.getTransient();
+    const raw = transient?.get(key);
+    if (!raw || raw.length === 0) {
+      throw new Error(`Transient '${key}' is required — commercial data must not be passed as an argument`);
+    }
+    return JSON.parse(Buffer.from(raw).toString()) as T;
+  }
+
+  private async putPrivate(ctx: Context, key: string, value: unknown): Promise<void> {
+    await ctx.stub.putPrivateData(this.PRIVATE_COLLECTION, key, Buffer.from(JSON.stringify(value)));
+  }
+
+  private async getPrivate<T>(ctx: Context, key: string): Promise<T | null> {
+    try {
+      const data = await ctx.stub.getPrivateData(this.PRIVATE_COLLECTION, key);
+      if (!data || data.length === 0) return null;
+      return JSON.parse(data.toString()) as T;
+    } catch {
+      // A peer outside the collection cannot read it at all. That is the
+      // boundary working, not an error worth surfacing.
+      return null;
+    }
+  }
+
+  /**
+   * §4.1: collections say who HOLDS the data, never who may ASK for it, and
+   * implicit collections have no memberOnlyRead to fall back on. Every private
+   * read therefore checks the caller against the deal's party list here.
+   */
+  private assertParty(ctx: Context, partyMsps: string[], what: string): void {
+    const caller = ctx.clientIdentity.getMSPID();
+    if (caller === 'PlatformMSP' || partyMsps.includes(caller)) return;
+    throw new Error(`${caller} is not a party to ${what}`);
+  }
+
+  private isParty(ctx: Context, partyMsps: string[]): boolean {
+    const caller = ctx.clientIdentity.getMSPID();
+    return caller === 'PlatformMSP' || partyMsps.includes(caller);
+  }
+
   private poKey(id: string): string { return `PO:${id}`; }
   private grnKey(id: string): string { return `GRN:${id}`; }
   private invKey(id: string): string { return `INV:${id}`; }
@@ -504,15 +617,30 @@ export class TradeDocChaincode extends Contract {
     return JSON.stringify(po);
   }
 
-  private async getPO(ctx: Context, poId: string): Promise<PurchaseOrder> {
+  /** Public index only — enough for the state machine, no commercial figures. */
+  private async getPOIndex(ctx: Context, poId: string): Promise<POIndex> {
     const data = await ctx.stub.getState(this.poKey(poId));
     if (!data || data.length === 0) throw new Error(`Purchase order ${poId} not found`);
-    return JSON.parse(data.toString()) as PurchaseOrder;
+    return JSON.parse(data.toString()) as POIndex;
+  }
+
+  /**
+   * Index merged with the private payload. The payload comes back only when the
+   * executing peer holds the collection; on any other peer the figures are
+   * simply absent, which is the boundary working rather than an error.
+   */
+  private async getPO(ctx: Context, poId: string): Promise<PurchaseOrder> {
+    const index = await this.getPOIndex(ctx, poId);
+    const priv = await this.getPrivate<POPrivate>(ctx, this.poKey(poId));
+    return { ...index, ...(priv ?? {}) };
   }
 
   private async tryGetPO(ctx: Context, poId: string): Promise<PurchaseOrder | null> {
     const data = await ctx.stub.getState(this.poKey(poId));
-    return data && data.length > 0 ? (JSON.parse(data.toString()) as PurchaseOrder) : null;
+    if (!data || data.length === 0) return null;
+    const index = JSON.parse(data.toString()) as POIndex;
+    const priv = await this.getPrivate<POPrivate>(ctx, this.poKey(poId));
+    return { ...index, ...(priv ?? {}) };
   }
 
   private async getGRNState(ctx: Context, grnId: string): Promise<GoodsReceipt> {

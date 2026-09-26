@@ -7,14 +7,28 @@ chai.use(chaiAsPromised);
 const { expect } = chai;
 
 // Minimal Context + stub mock (mirrors onboarding-cc test harness).
-function makeCtx(state: Record<string, Buffer> = {}) {
+function makeCtx(state: Record<string, Buffer> = {}, opts: { msp?: string; transient?: unknown } = {}) {
+  // Private collections live in their own keyspace and are only readable by a
+  // peer of the owning org — the mock keeps them separate for the same reason.
+  const priv: Record<string, Buffer> = {};
+  const transientMap = new Map<string, Buffer>();
+  if (opts.transient !== undefined) {
+    transientMap.set('payload', Buffer.from(JSON.stringify(opts.transient)));
+  }
   const stub = {
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
+    deleteState: sinon.stub().callsFake(async (key: string) => { delete state[key]; }),
+    getPrivateData: sinon.stub().callsFake(async (_c: string, key: string) => priv[key] ?? Buffer.alloc(0)),
+    putPrivateData: sinon.stub().callsFake(async (_c: string, key: string, val: Buffer) => { priv[key] = val; }),
+    getTransient: sinon.stub().returns(transientMap),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
   };
-  return { stub } as any;
+  const clientIdentity = { getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP') };
+  const setTransient = (value: unknown) =>
+    transientMap.set('payload', Buffer.from(JSON.stringify(value)));
+  return { stub, clientIdentity, __private: priv, __setTransient: setTransient } as any;
 }
 
 // Worked-example PO — Tata → Bharat, 10,000 panels @ ₹2,500 = ₹2.5cr (EXAMPLE-FLOW step 1).
@@ -47,9 +61,38 @@ const validInvoice = {
 
 const cc = new TradeDocChaincode();
 
+// ─── Private-data test helpers (PRIVACY-DESIGN.md §2.1) ──────────────────────
+// createPO now takes identifiers as arguments and commercial figures as
+// transient data, so the figures never enter the transaction proposal.
+const PARTY_MSPS = ['BuyerMSP', 'SupplierMSP', 'PlatformMSP'];
+const TEST_SALT = '0123456789abcdef0123456789abcdef';
+
+function poIndexArgs(po: any) {
+  return JSON.stringify({
+    po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id,
+    party_msps: PARTY_MSPS, doc_hash: po.doc_hash,
+  });
+}
+
+function poPrivateArgs(po: any) {
+  return {
+    currency: po.currency, gross_value: po.gross_value,
+    item_description: po.item_description, quantity: po.quantity,
+    price_per_unit: po.price_per_unit, delivery_terms: po.delivery_terms ?? '',
+    payment_terms: po.payment_terms ?? '', salt: TEST_SALT,
+  };
+}
+
+/** Submit a PO the way the API does: index as args, figures as transient. */
+async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
+  ctx.__setTransient({ ...poPrivateArgs(po), ...overrides });
+  return cc.createPO(ctx, poIndexArgs(po));
+}
+
+
 // Helper: stand up a PO + accepted GRN so an invoice can match.
 async function seedPoAndGrn(ctx: any) {
-  await cc.createPO(ctx, JSON.stringify(validPO));
+  await createPO(ctx, validPO);
   await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '10000', '');
   await cc.acceptGRN(ctx, validInvoice.grn_id);
 }
@@ -59,7 +102,7 @@ describe('TradeDocChaincode', () => {
   describe('createPO', () => {
     it('creates a PO directly in Issued status', async () => {
       const ctx = makeCtx();
-      const po = JSON.parse(await cc.createPO(ctx, JSON.stringify(validPO)));
+      const po = JSON.parse(await createPO(ctx, validPO));
       expect(po.status).to.equal('Issued');
       expect(po.po_id).to.equal('TM-PO-2024-0892');
       expect(po.gross_value).to.equal(25000000);
@@ -67,22 +110,22 @@ describe('TradeDocChaincode', () => {
 
     it('rejects duplicate po_id', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await expect(
-        cc.createPO(ctx, JSON.stringify({ ...validPO, doc_hash: 'other' }))
+        createPO(ctx, { ...validPO, doc_hash: 'other' })
       ).to.be.rejectedWith(/already exists/);
     });
 
     it('rejects missing supplier_id', async () => {
       const ctx = makeCtx();
       const { supplier_id, ...noSupplier } = validPO;
-      await expect(cc.createPO(ctx, JSON.stringify(noSupplier))).to.be.rejectedWith(/supplier_id is required/);
+      await expect(createPO(ctx, noSupplier)).to.be.rejectedWith(/supplier_id is required/);
     });
 
     it('rejects non-positive gross_value', async () => {
       const ctx = makeCtx();
       await expect(
-        cc.createPO(ctx, JSON.stringify({ ...validPO, gross_value: 0 }))
+        createPO(ctx, { ...validPO, gross_value: 0 })
       ).to.be.rejectedWith(/gross_value must be positive/);
     });
   });
@@ -90,20 +133,20 @@ describe('TradeDocChaincode', () => {
   describe('PO state machine', () => {
     it('Issued → Acknowledged by the supplier', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       const po = JSON.parse(await cc.acknowledgePO(ctx, validPO.po_id, 'bharat-001'));
       expect(po.status).to.equal('Acknowledged');
     });
 
     it('rejects acknowledge by a non-supplier', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await expect(cc.acknowledgePO(ctx, validPO.po_id, 'someone-else')).to.be.rejectedWith(/Only supplier/);
     });
 
     it('walks Acknowledged → Locked → Fulfilled → Closed', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await cc.acknowledgePO(ctx, validPO.po_id, 'bharat-001');
       expect(JSON.parse(await cc.lockPO(ctx, validPO.po_id)).status).to.equal('Locked');
       expect(JSON.parse(await cc.fulfillPO(ctx, validPO.po_id)).status).to.equal('Fulfilled');
@@ -112,13 +155,13 @@ describe('TradeDocChaincode', () => {
 
     it('rejects illegal transition Issued → Fulfilled', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await expect(cc.fulfillPO(ctx, validPO.po_id)).to.be.rejectedWith(/Illegal PO transition/);
     });
 
     it('amends an Issued PO and records justification', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       const po = JSON.parse(await cc.amendPO(ctx, validPO.po_id, JSON.stringify({ gross_value: 26000000 }), 'price revision'));
       expect(po.status).to.equal('Amended');
       expect(po.gross_value).to.equal(26000000);
@@ -129,7 +172,7 @@ describe('TradeDocChaincode', () => {
   describe('GRN', () => {
     it('creates and accepts a GRN, setting accepted_qty', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await cc.createGRN(ctx, 'grn-1', validPO.po_id, '10000', '');
       const grn = JSON.parse(await cc.acceptGRN(ctx, 'grn-1'));
       expect(grn.status).to.equal('Accepted');
@@ -143,7 +186,7 @@ describe('TradeDocChaincode', () => {
 
     it('stores and registers an optional GRN doc_hash', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       const grn = JSON.parse(await cc.createGRN(ctx, 'grn-h', validPO.po_id, '10000', 'grn-hash-xyz'));
       expect(grn.doc_hash).to.equal('grn-hash-xyz');
       // A later document reusing that hash is blocked (FR-DOC-04).
@@ -205,7 +248,7 @@ describe('TradeDocChaincode', () => {
 
     it('fails when invoice quantity exceeds accepted GRN quantity', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
       await cc.acceptGRN(ctx, validInvoice.grn_id);
       await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000
@@ -218,7 +261,7 @@ describe('TradeDocChaincode', () => {
   describe('reviseInvoice', () => {
     it('corrects a failed Submitted invoice and re-matches to Matched', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
       await cc.acceptGRN(ctx, validInvoice.grn_id);
       await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000 → fails

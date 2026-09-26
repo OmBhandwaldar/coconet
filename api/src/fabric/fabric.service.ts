@@ -43,6 +43,29 @@ export async function invoke<T = unknown>(
   return withContract<T>(ccName, fn, (c) => c.submitTransaction(fn, ...args));
 }
 
+/**
+ * Submit with a transient payload — commercial figures travel here, never as
+ * arguments, so they do not appear in the transaction proposal that endorsers
+ * and the orderer see (PRIVACY-DESIGN.md §2.2).
+ *
+ * The payload is deliberately absent from the debug log below; logging it would
+ * undo the point of sending it out of band.
+ */
+export async function invokeWithTransient<T = unknown>(
+  ccName: string,
+  fn: string,
+  args: string[],
+  transient: Record<string, unknown>,
+): Promise<T> {
+  logger.debug({ chaincode: ccName, fn, args }, 'Fabric invoke (with transient payload)');
+  return withContract<T>(ccName, fn, (c) =>
+    c.submit(fn, {
+      arguments: args,
+      transientData: { payload: Buffer.from(JSON.stringify(transient)) },
+    }),
+  );
+}
+
 // Evaluate a query (read-only). Hits one peer, no consensus.
 export async function query<T = unknown>(
   ccName: string,

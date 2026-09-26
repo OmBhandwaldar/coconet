@@ -33,14 +33,28 @@ function collectKeys(value: unknown, into: string[] = []): string[] {
   return into;
 }
 
-function makeCtx(state: Record<string, Buffer> = {}) {
+function makeCtx(state: Record<string, Buffer> = {}, opts: { msp?: string; transient?: unknown } = {}) {
+  // Private collections live in their own keyspace and are only readable by a
+  // peer of the owning org — the mock keeps them separate for the same reason.
+  const priv: Record<string, Buffer> = {};
+  const transientMap = new Map<string, Buffer>();
+  if (opts.transient !== undefined) {
+    transientMap.set('payload', Buffer.from(JSON.stringify(opts.transient)));
+  }
   const stub = {
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
+    deleteState: sinon.stub().callsFake(async (key: string) => { delete state[key]; }),
+    getPrivateData: sinon.stub().callsFake(async (_c: string, key: string) => priv[key] ?? Buffer.alloc(0)),
+    putPrivateData: sinon.stub().callsFake(async (_c: string, key: string, val: Buffer) => { priv[key] = val; }),
+    getTransient: sinon.stub().returns(transientMap),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
   };
-  return { stub } as any;
+  const clientIdentity = { getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP') };
+  const setTransient = (value: unknown) =>
+    transientMap.set('payload', Buffer.from(JSON.stringify(value)));
+  return { stub, clientIdentity, __private: priv, __setTransient: setTransient } as any;
 }
 
 // Every setEvent call made on this ctx, decoded.
@@ -90,11 +104,40 @@ const invoice = {
 
 const cc = new TradeDocChaincode();
 
+// ─── Private-data test helpers (PRIVACY-DESIGN.md §2.1) ──────────────────────
+// createPO now takes identifiers as arguments and commercial figures as
+// transient data, so the figures never enter the transaction proposal.
+const PARTY_MSPS = ['BuyerMSP', 'SupplierMSP', 'PlatformMSP'];
+const TEST_SALT = '0123456789abcdef0123456789abcdef';
+
+function poIndexArgs(po: any) {
+  return JSON.stringify({
+    po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id,
+    party_msps: PARTY_MSPS, doc_hash: po.doc_hash,
+  });
+}
+
+function poPrivateArgs(po: any) {
+  return {
+    currency: po.currency, gross_value: po.gross_value,
+    item_description: po.item_description, quantity: po.quantity,
+    price_per_unit: po.price_per_unit, delivery_terms: po.delivery_terms ?? '',
+    payment_terms: po.payment_terms ?? '', salt: TEST_SALT,
+  };
+}
+
+/** Submit a PO the way the API does: index as args, figures as transient. */
+async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
+  ctx.__setTransient({ ...poPrivateArgs(po), ...overrides });
+  return cc.createPO(ctx, poIndexArgs(po));
+}
+
+
 describe('trade-doc-cc event payload contract', () => {
 
   it('emits no commercial data across the PO lifecycle', async () => {
     const ctx = makeCtx({});
-    await cc.createPO(ctx, JSON.stringify(po));
+    await createPO(ctx, po);
     await cc.amendPO(ctx, po.po_id, JSON.stringify({ gross_value: 26000000, quantity: 10400 }), 'revised forecast');
     await cc.acknowledgePO(ctx, po.po_id, 'bharat-001');
     await cc.lockPO(ctx, po.po_id);
@@ -104,7 +147,7 @@ describe('trade-doc-cc event payload contract', () => {
 
   it('emits no commercial data across the GRN lifecycle', async () => {
     const ctx = makeCtx({});
-    await cc.createPO(ctx, JSON.stringify(po));
+    await createPO(ctx, po);
     await cc.createGRN(ctx, invoice.grn_id, po.po_id, '9900', 'grn-hash-0892');
     await cc.acceptGRN(ctx, invoice.grn_id);
     assertNoCommercialData(emitted(ctx));
@@ -112,7 +155,7 @@ describe('trade-doc-cc event payload contract', () => {
 
   it('emits no commercial data across the invoice lifecycle', async () => {
     const ctx = makeCtx({});
-    await cc.createPO(ctx, JSON.stringify(po));
+    await createPO(ctx, po);
     await cc.createGRN(ctx, invoice.grn_id, po.po_id, '9900', '');
     await cc.acceptGRN(ctx, invoice.grn_id);
     await cc.submitInvoice(ctx, JSON.stringify(invoice));
@@ -127,7 +170,7 @@ describe('trade-doc-cc event payload contract', () => {
   // both documents, in free text, to every member of the channel.
   it('emits no commercial data when the 3-way match FAILS', async () => {
     const ctx = makeCtx({});
-    await cc.createPO(ctx, JSON.stringify(po));
+    await createPO(ctx, po);
     await cc.createGRN(ctx, invoice.grn_id, po.po_id, '100', '');
     await cc.acceptGRN(ctx, invoice.grn_id);
     await cc.submitInvoice(ctx, JSON.stringify({ ...invoice, amount: 99000000 }));
@@ -141,7 +184,7 @@ describe('trade-doc-cc event payload contract', () => {
 
   it('emits no commercial data when an invoice is rejected or disputed', async () => {
     const ctx = makeCtx({});
-    await cc.createPO(ctx, JSON.stringify(po));
+    await createPO(ctx, po);
     await cc.createGRN(ctx, invoice.grn_id, po.po_id, '9900', '');
     await cc.acceptGRN(ctx, invoice.grn_id);
     await cc.submitInvoice(ctx, JSON.stringify(invoice));
