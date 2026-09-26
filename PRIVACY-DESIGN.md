@@ -118,6 +118,39 @@ Resulting visibility:
 | Platform | full payload | full payload |
 | Auditor | full read of the audit record — every action, actor, hash and timestamp — but NOT collection payloads it was never a member of (§5) | same |
 
+### 2.2.1 Where the payload actually lives — platform-custodied canonical
+
+**Decided 27 September 2026, during implementation.** §2.2 above describes the payload going to
+"each party's implicit collection". Fabric makes that costlier than it appears:
+
+> *"the private data dissemination policy and endorsement policy for implicit organization-specific
+> collections is the respective organization itself."*
+
+Two consequences the original design did not account for:
+
+1. **Writing to an org's implicit collection requires that org to endorse.** Writing Deal A to
+   Tata's, Bharat's, HDFC's and Platform's collections means all four endorse every transaction —
+   every party's peers must be online for any write to succeed.
+2. **Reads inside chaincode are org-specific.** A peer can only read its own org's implicit
+   collection, so a `GetPrivateData` in the 3-way match or Rule-01 eligibility returns different
+   results on different endorsers, and endorsement stops matching.
+
+**Decision: the canonical payload lives in `_implicit_org_PlatformMSP` only.**
+
+- Platform is a party to every deal, so the canonical copy always exists and chaincode logic is
+  deterministic with a single endorsing org.
+- **Non-parties still never receive the bytes** — the competitor leak in §1.1 is closed, which is
+  what this design exists to do. ICICI's peers hold nothing of Deal A.
+- Parties read their deal through chaincode, which enforces the party check in §4.1 against the
+  caller's MSP.
+
+**What this costs.** Parties do not hold their own copy of their deal's payload; Platform is a
+required custodian. That is a real concentration of trust — though Platform already holds the only
+API identity and is party to every deal, so it is a concentration the architecture already had
+rather than a new one. If parties must hold their own bytes for resilience or independent audit,
+the upgrade path is a follow-up transaction per party endorsed by that party, replicating from the
+canonical copy; the canonical read path does not change.
+
 ### 2.3 Collections are per chaincode namespace
 
 `_implicit_org_HDFCMSP` under `trade-doc-cc` is a **different store** from the same-named collection
@@ -149,10 +182,13 @@ chaincode namespace."* See §4 for how cross-chaincode reads are done correctly.
 
 ### 3.1 `blockToLive: 0` — never purge
 
-Set explicitly on every collection carrying audit-relevant data. `0` means never purge; any
-non-zero value purges the private data after that many blocks, which would destroy the evidence
-trail NFR-05 requires. Fabric's docs do not state a default for an omitted `blockToLive`, so set it
-explicitly rather than relying on one.
+**On implicit collections this is not a setting — it is guaranteed.** Fabric: *"blockToLive is not
+available, meaning that private data is never automatically purged."* Since Design 2 stores payloads
+in implicit collections (§2.2), the evidence trail NFR-05 requires cannot be purged out from under
+us, and there is nothing to configure.
+
+It remains a live decision for any **named** collection added later: `0` means never purge, a
+non-zero value purges after that many blocks, and it cannot be changed once the collection exists.
 
 **This is irreversible.** `blockToLive` cannot be modified on an existing collection — Fabric
 requires a consistent value regardless of a peer's block height. It must be correct at creation.
@@ -330,7 +366,8 @@ question, owned by the channel-separation work.
 ### 4.1 Consequence — collections are not access control
 
 Fabric is explicit that *"private data collections do not by themselves limit access control within
-chaincode."* Any chaincode on the channel, and any client reaching a peer that holds the data, can
+chaincode."* For implicit collections it is stronger still — *"memberOnlyRead and memberOnlyWrite are
+not available"* — so there is no declarative access control to fall back on at all. Any chaincode on the channel, and any client reaching a peer that holds the data, can
 invoke `trade-doc-cc.getInvoice` and receive private data.
 
 **Therefore every read path returning private data must verify the caller against the deal's party
