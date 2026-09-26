@@ -62,8 +62,24 @@ async function bootstrap(): Promise<void> {
     );
   });
 
+  // Drain in the right order: stop accepting connections, let in-flight requests
+  // finish, and only then drop the chain connections they may still be using.
+  // Disconnecting Fabric first (as this did) fails any request mid-transaction.
+  let shuttingDown = false;
   const shutdown = async (signal: string): Promise<void> => {
-    logger.info({ signal }, 'Shutting down...');
+    if (shuttingDown) return;
+    shuttingDown = true;
+    logger.info({ signal }, 'Shutting down — draining in-flight requests...');
+
+    const forced = setTimeout(() => {
+      logger.warn({ timeoutMs: env.SHUTDOWN_TIMEOUT_MS }, 'Drain timed out — forcing exit');
+      process.exit(1);
+    }, env.SHUTDOWN_TIMEOUT_MS);
+    forced.unref();
+
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    logger.info('Server closed to new connections');
+
     if (fabricOk) {
       try {
         await disconnectGateway();
@@ -71,10 +87,10 @@ async function bootstrap(): Promise<void> {
         logger.warn({ err }, 'Error disconnecting Fabric Gateway');
       }
     }
-    server.close(() => {
-      logger.info('Server closed');
-      process.exit(0);
-    });
+
+    clearTimeout(forced);
+    logger.info('Shutdown complete');
+    process.exit(0);
   };
 
   process.on('SIGTERM', () => void shutdown('SIGTERM'));

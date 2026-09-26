@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop, develop-more, 'feat/**', 'fix/**', 'docs/**']
+  pull_request:
+    branches: [main, develop, develop-more]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Type-check, lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck --workspace=@coconet/api
+
+      # NOTE: `npm run lint` is defined at the root but there is no ESLint config
+      # in the repo, so it errors out. Adding one is tracked in NEW-PLAN Block 9;
+      # CI will not run a command that is known broken.
+
+      # Chaincode unit tests (mocha). These include the event payload guards
+      # from Block 1 — a commercial field added to an event fails the build.
+      - name: Chaincode tests
+        run: |
+          npm test --workspace=@coconet/onboarding-cc
+          npm test --workspace=@coconet/trade-doc-cc
+          npm test --workspace=@coconet/finance-cc
+
+      - name: Solidity tests
+        run: npm test --workspace=@coconet/contracts
+
+      - name: API tests
+        run: npm test --workspace=@coconet/api
+
+  contracts-security:
+    name: Contract static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compile contracts
+        run: npm run compile --workspace=@coconet/contracts
+
+      # Slither is fast enough to gate every push. It understands the Hardhat
+      # build, so it picks up the existing artifacts.
+      - name: Slither
+        uses: crytic/slither-action@v0.4.0
+        id: slither
+        with:
+          target: contracts/
+          slither-args: --exclude-dependencies --filter-paths "node_modules"
+          fail-on: medium
+
+  contracts-symbolic:
+    name: Contract symbolic execution (Mythril)
+    runs-on: ubuntu-latest
+    # Mythril explores execution paths with a solver and takes minutes per
+    # contract, so it runs on a schedule and on demand rather than every push.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Mythril
+        run: pip install mythril
+
+      - name: Analyse contracts
+        run: |
+          set -e
+          for f in contracts/src/*.sol; do
+            case "$(basename "$f")" in
+              MockUSDC.sol) echo "Skipping $f — test-only token, removed before production"; continue ;;
+            esac
+            echo "::group::myth analyze $f"
+            myth analyze "$f" \
+              --solv 0.8.24 \
+              --execution-timeout 600 \
+              --solc-json contracts/mythril-remappings.json
+            echo "::endgroup::"
+          done
