@@ -145,7 +145,8 @@ export class TradeDocChaincode extends Contract {
 
     await ctx.stub.putState(this.poKey(po.po_id), Buffer.from(JSON.stringify(po)));
     ctx.stub.setEvent('POCreated', Buffer.from(JSON.stringify({
-      po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id, gross_value: po.gross_value,
+      po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id,
+      status: po.status, doc_hash: po.doc_hash,
     })));
     return JSON.stringify(po);
   }
@@ -185,7 +186,9 @@ export class TradeDocChaincode extends Contract {
     po.amendments.push({ changes: applied, justification, at: this.txTimestamp(ctx) });
     po.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.poKey(poId), Buffer.from(JSON.stringify(po)));
-    ctx.stub.setEvent('POAmended', Buffer.from(JSON.stringify({ po_id: poId, changes: applied })));
+    ctx.stub.setEvent('POAmended', Buffer.from(JSON.stringify({
+      po_id: poId, status: po.status, changed_fields: Object.keys(applied),
+    })));
     return JSON.stringify(po);
   }
 
@@ -234,7 +237,9 @@ export class TradeDocChaincode extends Contract {
     };
     if (docHash) await this.registerDocHash(ctx, docHash, 'GRN', grnId);
     await ctx.stub.putState(this.grnKey(grnId), Buffer.from(JSON.stringify(grn)));
-    ctx.stub.setEvent('GRNCreated', Buffer.from(JSON.stringify({ grn_id: grnId, po_id: po.po_id, received_qty: qty })));
+    ctx.stub.setEvent('GRNCreated', Buffer.from(JSON.stringify({
+      grn_id: grnId, po_id: po.po_id, status: grn.status, doc_hash: grn.doc_hash,
+    })));
     return JSON.stringify(grn);
   }
 
@@ -246,7 +251,7 @@ export class TradeDocChaincode extends Contract {
     grn.accepted_qty = grn.received_qty; // full acceptance (minimal GRN)
     grn.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.grnKey(grnId), Buffer.from(JSON.stringify(grn)));
-    ctx.stub.setEvent('GRNAccepted', Buffer.from(JSON.stringify({ grn_id: grnId, accepted_qty: grn.accepted_qty })));
+    ctx.stub.setEvent('GRNAccepted', Buffer.from(JSON.stringify({ grn_id: grnId, status: grn.status })));
     return JSON.stringify(grn);
   }
 
@@ -298,7 +303,8 @@ export class TradeDocChaincode extends Contract {
     };
     await ctx.stub.putState(this.invKey(invoice.invoice_id), Buffer.from(JSON.stringify(invoice)));
     ctx.stub.setEvent('InvoiceSubmitted', Buffer.from(JSON.stringify({
-      invoice_id: invoice.invoice_id, po_id: invoice.po_id, amount: invoice.amount,
+      invoice_id: invoice.invoice_id, po_id: invoice.po_id, grn_id: invoice.grn_id,
+      status: invoice.status, doc_hash: invoice.doc_hash,
     })));
     return JSON.stringify(invoice);
   }
@@ -357,7 +363,14 @@ export class TradeDocChaincode extends Contract {
       invoice.status = 'Matched';
       ctx.stub.setEvent('InvoiceMatched', Buffer.from(JSON.stringify({ invoice_id: invoice.invoice_id })));
     } else {
-      ctx.stub.setEvent('InvoiceMatchFailed', Buffer.from(JSON.stringify({ invoice_id: invoice.invoice_id, reasons })));
+      // `reasons` holds both documents' figures in free text — it stays in state
+      // (invoice.match_result) and never enters an event. Only the check NAMES go out.
+      const failed_checks = Object.entries(invoice.match_result.checks)
+        .filter(([, ok]) => !ok)
+        .map(([check]) => check);
+      ctx.stub.setEvent('InvoiceMatchFailed', Buffer.from(JSON.stringify({
+        invoice_id: invoice.invoice_id, status: invoice.status, failed_checks,
+      })));
     }
   }
 
@@ -381,7 +394,9 @@ export class TradeDocChaincode extends Contract {
     }
     invoice.amount = amt;
     invoice.quantity = qty;
-    ctx.stub.setEvent('InvoiceRevised', Buffer.from(JSON.stringify({ invoice_id: invoiceId, amount: amt, quantity: qty })));
+    ctx.stub.setEvent('InvoiceRevised', Buffer.from(JSON.stringify({
+      invoice_id: invoiceId, status: invoice.status, doc_hash: invoice.doc_hash,
+    })));
 
     // Re-run the 3-way match on the corrected figures, then persist once.
     await this.applyMatch(ctx, invoice);
@@ -410,7 +425,7 @@ export class TradeDocChaincode extends Contract {
     invoice.status = 'Closed';
     invoice.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
-    ctx.stub.setEvent('InvoiceRejected', Buffer.from(JSON.stringify({ invoice_id: invoiceId, reason: reason ?? '' })));
+    ctx.stub.setEvent('InvoiceRejected', Buffer.from(JSON.stringify({ invoice_id: invoiceId, status: invoice.status })));
     return JSON.stringify(invoice);
   }
 
@@ -421,7 +436,7 @@ export class TradeDocChaincode extends Contract {
     invoice.status = 'Disputed';
     invoice.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
-    ctx.stub.setEvent('InvoiceDisputed', Buffer.from(JSON.stringify({ invoice_id: invoiceId, reason: reason ?? '' })));
+    ctx.stub.setEvent('InvoiceDisputed', Buffer.from(JSON.stringify({ invoice_id: invoiceId, status: invoice.status })));
     return JSON.stringify(invoice);
   }
 
