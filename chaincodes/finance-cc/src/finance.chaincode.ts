@@ -100,7 +100,8 @@ export class FinanceChaincode extends Contract {
     };
     await ctx.stub.putState(this.frKey(fr.request_id), Buffer.from(JSON.stringify(fr)));
     ctx.stub.setEvent('FinanceRequestCreated', Buffer.from(JSON.stringify({
-      request_id: fr.request_id, product_type: fr.product_type, asset_id: fr.asset_id,
+      request_id: fr.request_id, product_type: fr.product_type,
+      asset_type: fr.asset_type, asset_id: fr.asset_id, status: fr.status,
     })));
     return JSON.stringify(fr);
   }
@@ -140,8 +141,11 @@ export class FinanceChaincode extends Contract {
     fr.updated_at = this.txTimestamp(ctx);
     if (passed) fr.status = 'Under Review';
     await ctx.stub.putState(this.frKey(requestId), Buffer.from(JSON.stringify(fr)));
+    // `reasons` is free text and stays in fr.eligibility. Only the check NAMES
+    // that failed leave the chaincode, so the event says what failed, not by how much.
+    const failed_checks = Object.entries(checks).filter(([, ok]) => !ok).map(([check]) => check);
     ctx.stub.setEvent(passed ? 'FinanceEligibilityPassed' : 'FinanceEligibilityFailed',
-      Buffer.from(JSON.stringify({ request_id: requestId, reasons })));
+      Buffer.from(JSON.stringify({ request_id: requestId, status: fr.status, failed_checks })));
     if (!passed) throw new Error(`Eligibility failed: ${reasons.join('; ')}`);
     return JSON.stringify(fr);
   }
@@ -184,7 +188,7 @@ export class FinanceChaincode extends Contract {
     fr.approved_amount = amount;
     fr.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.frKey(requestId), Buffer.from(JSON.stringify(fr)));
-    ctx.stub.setEvent('FinanceApproved', Buffer.from(JSON.stringify({ request_id: requestId, approved_amount: amount })));
+    ctx.stub.setEvent('FinanceApproved', Buffer.from(JSON.stringify({ request_id: requestId, status: fr.status })));
     return JSON.stringify(fr);
   }
 
@@ -213,7 +217,7 @@ export class FinanceChaincode extends Contract {
     fr.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.frKey(requestId), Buffer.from(JSON.stringify(fr)));
     ctx.stub.setEvent('FinanceAccepted', Buffer.from(JSON.stringify({
-      request_id: requestId, asset_type: fr.asset_type, asset_id: fr.asset_id,
+      request_id: requestId, asset_type: fr.asset_type, asset_id: fr.asset_id, status: fr.status,
     })));
     return JSON.stringify(fr);
   }
@@ -237,7 +241,7 @@ export class FinanceChaincode extends Contract {
     fr.updated_at = this.txTimestamp(ctx);
     await ctx.stub.putState(this.frKey(requestId), Buffer.from(JSON.stringify(fr)));
     ctx.stub.setEvent('FinanceDisbursed', Buffer.from(JSON.stringify({
-      request_id: requestId, disbursed_amount: gross, net_disbursed: fr.net_disbursed,
+      request_id: requestId, status: fr.status,
     })));
     return JSON.stringify(fr);
   }
@@ -257,7 +261,7 @@ export class FinanceChaincode extends Contract {
     const lockKey = this.lockKey(fr.asset_type, fr.asset_id);
     if (await this.exists(ctx, lockKey)) await ctx.stub.deleteState(lockKey);
     await ctx.stub.putState(this.frKey(requestId), Buffer.from(JSON.stringify(fr)));
-    ctx.stub.setEvent('FinanceRepaid', Buffer.from(JSON.stringify({ request_id: requestId, amount: amt })));
+    ctx.stub.setEvent('FinanceRepaid', Buffer.from(JSON.stringify({ request_id: requestId, status: fr.status })));
     return JSON.stringify(fr);
   }
 

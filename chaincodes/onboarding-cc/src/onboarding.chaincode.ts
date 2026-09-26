@@ -179,7 +179,7 @@ export class OnboardingChaincode extends Contract {
     org.updated_at = this.txTimestamp(ctx);
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
-    ctx.stub.setEvent('RiskTierAssigned', Buffer.from(JSON.stringify({ org_id: orgId, risk_tier: tier })));
+    ctx.stub.setEvent('RiskTierAssigned', Buffer.from(JSON.stringify({ org_id: orgId, status: org.status })));
 
     return JSON.stringify(org);
   }
@@ -208,7 +208,7 @@ export class OnboardingChaincode extends Contract {
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
     ctx.stub.setEvent(
       'MakerCheckerThresholdSet',
-      Buffer.from(JSON.stringify({ org_id: orgId, tx_type: txType, threshold: amount })),
+      Buffer.from(JSON.stringify({ org_id: orgId, tx_type: txType })),
     );
 
     return JSON.stringify(org);
