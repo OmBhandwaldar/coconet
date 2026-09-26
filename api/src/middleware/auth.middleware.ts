@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { verifyToken, type AuthClaims } from '../auth/jwt.js';
+import { runAs } from '../auth/identity-context.js';
 import { UnauthorizedError } from '../errors/AppError.js';
 
 /**
@@ -14,8 +15,11 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     return;
   }
   try {
-    req.auth = verifyToken(header.slice('Bearer '.length).trim());
-    next();
+    const claims = verifyToken(header.slice('Bearer '.length).trim());
+    req.auth = claims;
+    // Run the rest of the request inside the caller's identity context so the
+    // Fabric layer signs under their MSP rather than the platform operator's.
+    runAs(claims, () => next());
   } catch {
     // Expired, wrong issuer, bad signature, malformed — all the same to a caller.
     next(new UnauthorizedError('Invalid or expired token'));
