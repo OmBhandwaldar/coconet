@@ -17,7 +17,7 @@ Block 4 implements.
 | 1 | Event payload scrub | `feat/harden-01-events` | [x] Done |
 | 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [x] Done |
 | 3 | Identity & access | `feat/harden-03-identity` | [~] Mostly done — Fabric CA outstanding |
-| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [ ] Not started |
+| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [~] In progress — PO migrated, GRN/invoice/finance remain |
 | 5 | Maker-checker | `feat/harden-05-maker-checker` | [ ] Not started |
 | 6 | Bridge durability | `feat/harden-06-bridge` | [ ] Not started |
 | 7 | Polygon contracts & settlement | `feat/harden-07-contracts` | [ ] Not started |
@@ -203,6 +203,34 @@ lenders, assert the non-party lender's `getPrivateData` returns empty.
 **Commits:** ~12 small.
 
 **Verify:** `security-review` · two-deal leak test · demo green · `peer chaincode query` from a non-party peer returns nothing.
+
+**Progress.** The purchase order is fully migrated and the property is proven on a
+live network: querying the same PO through `peer chaincode query`, PlatformMSP
+sees `gross_value`, `price_per_unit`, quantity and description, while LenderMSP —
+same channel, not a party — gets the index and nothing else. Demo green end to end.
+
+Landed: `invokeWithTransient` with explicit endorsing org; `newSalt()` (128-bit
+CSPRNG, one per item) and `partyMsps()` resolving org→MSP from onboarding-cc;
+PO split into public index and private payload with party checks on read and
+write; chaincode test harness with private-data, transient and MSP support;
+`--signature-policy` in the deploy script; endorsement policy settled.
+
+**Three things the implementation forced, all recorded in PRIVACY-DESIGN.md:**
+
+- §2.2.1 — payload is **platform-custodied**, not copied to every party's
+  collection. Writing to an org's implicit collection requires that org to
+  endorse, and chaincode reads of org-specific collections are non-deterministic
+  across endorsers.
+- §3.1 — `blockToLive` is **not available** on implicit collections; Fabric never
+  purges them, so the NFR-05 evidence trail is guaranteed rather than configured.
+- §3.6 — endorsement is `OR('PlatformMSP.member')`, so trade and finance writes
+  are endorsed by a single organisation. Signatures still carry the acting user,
+  so attribution holds, but no member can independently endorse a write.
+
+**Remaining:** GRN, invoice and `finance-cc` payload splits; caller-party checks
+on their read paths; per-org activity feed filtering; the two-deal leak test
+across two lenders. ABAC defers with Fabric CA (Block 3). MongoDB partitioning is
+not applicable — mongoose is a dependency but nothing in the API uses it.
 
 ---
 
