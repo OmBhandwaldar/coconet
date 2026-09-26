@@ -7,7 +7,11 @@ import { ActionButton, ActionCard, Field, inputCls, inrUsd, usd } from '@/compon
 import { DocButton } from '@/components/DocViewer';
 import { DocUpload } from '@/components/DocUpload';
 import { PageHeader, EmptyDeal, ResultBanner, UploadChip, MatchAlert } from '@/components/workspace';
-import { apiCall, apiGet, apiSeq, parseFile } from '@/lib/api';
+import { apiCall, apiGet, apiSeq, parseFile, actAs } from '@/lib/api';
+
+// This screen acts as rajesh (Tata procurement). The API restricts each action to the
+// party whose action it is, so the client signs in as that person.
+actAs('rajesh');
 import { ORG, useDeal } from '@/lib/deal';
 import { escrowUsd } from '@/lib/amounts';
 import { fadeUp, stagger } from '@/lib/motion';

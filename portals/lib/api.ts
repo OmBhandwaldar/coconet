@@ -7,11 +7,49 @@ export interface ApiResult<T = any> {
   status: number;
 }
 
+// ─── Demo authentication ──────────────────────────────────────────────────────
+// The API now requires a token and restricts each action to the party whose
+// action it is. These screens have no login by design — they are a demo view of
+// all three sides at once — so each page declares which person it is acting as
+// and the client signs in lazily on that person's behalf.
+//
+// This is a demo affordance, not portal authentication. Real login, sessions and
+// server-side fetching are Block 10 in NEW-PLAN.md.
+const tokens = new Map<string, string>();
+let actor = 'platform';
+
+/** Called once per page to say who this screen acts as (e.g. 'rajesh'). */
+export function actAs(username: string) { actor = username; }
+
+async function tokenFor(username: string): Promise<string | null> {
+  const cached = tokens.get(username);
+  if (cached) return cached;
+  try {
+    const res = await fetch(`${BASE}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username, secret: `${username}-dev-secret` }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    const token = json?.data?.token as string | undefined;
+    if (token) tokens.set(username, token);
+    return token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiCall<T = any>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
   try {
+    const headers: Record<string, string> = {};
+    if (body) headers['content-type'] = 'application/json';
+    const token = await tokenFor(actor);
+    if (token) headers.authorization = `Bearer ${token}`;
+
     const res = await fetch(`${BASE}${path}`, {
       method,
-      headers: body ? { 'content-type': 'application/json' } : {},
+      headers,
       body: body ? JSON.stringify(body) : undefined,
     });
     let json: any = {};
@@ -53,7 +91,12 @@ export async function uploadFile(file: File): Promise<string | null> {
   const fd = new FormData();
   fd.append('file', file);
   try {
-    const res = await fetch(`${BASE}/api/trade-docs/documents/upload`, { method: 'POST', body: fd });
+    const token = await tokenFor(actor);
+    const res = await fetch(`${BASE}/api/trade-docs/documents/upload`, {
+      method: 'POST',
+      body: fd,
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    });
     if (!res.ok) return null;
     const j = await res.json();
     return j?.data?.doc_hash ?? null;
@@ -74,7 +117,12 @@ export async function parseFile(file: File): Promise<ParseResult | null> {
   const fd = new FormData();
   fd.append('file', file);
   try {
-    const res = await fetch(`${BASE}/api/trade-docs/documents/parse`, { method: 'POST', body: fd });
+    const token = await tokenFor(actor);
+    const res = await fetch(`${BASE}/api/trade-docs/documents/parse`, {
+      method: 'POST',
+      body: fd,
+      headers: token ? { authorization: `Bearer ${token}` } : undefined,
+    });
     if (!res.ok) return null;
     const j = await res.json();
     return (j?.data as ParseResult) ?? null;

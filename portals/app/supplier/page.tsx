@@ -8,7 +8,11 @@ import { DocButton } from '@/components/DocViewer';
 import { DocUpload } from '@/components/DocUpload';
 import { ParseImport } from '@/components/ParseImport';
 import { PageHeader, EmptyDeal, ResultBanner, MatchAlert } from '@/components/workspace';
-import { apiCall, apiGet, apiSeq } from '@/lib/api';
+import { apiCall, apiGet, apiSeq, actAs } from '@/lib/api';
+
+// This screen acts as kavitha (Bharat finance). The API restricts each action to the
+// party whose action it is, so the client signs in as that person.
+actAs('kavitha');
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT, discGross, preShipAmount } from '@/lib/amounts';
 import { stagger } from '@/lib/motion';
