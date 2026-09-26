@@ -51,6 +51,18 @@ const schema = z.object({
 
   JWT_SECRET: z.string().min(16),
   JWT_EXPIRES_IN: z.string().default('8h'),
+
+  // ─── HTTP hardening (Block 2) ───────────────────────────────────────────────
+  // Comma-separated allowlist. Defaults to the local portals origin so a dev
+  // checkout works unchanged; production must set this explicitly.
+  CORS_ORIGINS: z.string().default('http://localhost:3001'),
+  // Body cap. Document uploads go through multer, not the JSON parser, so this
+  // does not constrain them.
+  JSON_BODY_LIMIT: z.string().default('1mb'),
+  RATE_LIMIT_WINDOW_MS: z.coerce.number().default(60_000),
+  RATE_LIMIT_MAX: z.coerce.number().default(250),
+  // Seconds to let in-flight requests drain before forcing exit.
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().default(10_000),
 });
 
 const parsed = schema.safeParse(process.env);
@@ -62,3 +74,7 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
+
+// Allowed CORS origins as a list. '*' disables the allowlist entirely — only ever
+// appropriate for a throwaway environment, never production.
+export const corsOrigins: string[] = env.CORS_ORIGINS.split(',').map((o) => o.trim()).filter(Boolean);
