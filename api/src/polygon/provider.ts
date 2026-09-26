@@ -1,4 +1,5 @@
 import { ethers, JsonRpcProvider, NonceManager, Wallet } from 'ethers';
+import { getSecret } from '../config/secrets.js';
 import { env } from '../config/env.js';
 import { logger } from '../config/logger.js';
 
@@ -10,7 +11,9 @@ let signer: NonceManager | null = null;
 
 export async function connectPolygon(): Promise<void> {
   provider = new ethers.JsonRpcProvider(env.POLYGON_RPC_URL, env.POLYGON_CHAIN_ID);
-  signer = new NonceManager(new Wallet(env.POLYGON_PRIVATE_KEY, provider));
+  // Resolved through the secrets layer so a mounted secret or KMS can replace
+  // the env var, and so a publicly known development key cannot reach production.
+  signer = new NonceManager(new Wallet(getSecret('POLYGON_PRIVATE_KEY'), provider));
   const blockNumber = await provider.getBlockNumber();
   logger.info({ blockNumber, chainId: env.POLYGON_CHAIN_ID }, 'Polygon provider connected');
 }

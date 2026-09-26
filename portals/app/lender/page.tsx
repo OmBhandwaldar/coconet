@@ -6,7 +6,11 @@ import { Pipeline, type Stage } from '@/components/Pipeline';
 import { ActionButton, ActionCard, Field, inputCls, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { PageHeader, EmptyDeal, ResultBanner } from '@/components/workspace';
-import { apiCall, apiGet } from '@/lib/api';
+import { apiCall, apiGet, actAs } from '@/lib/api';
+
+// This screen acts as amit (HDFC relationship manager). The API restricts each action to the
+// party whose action it is, so the client signs in as that person.
+actAs('amit');
 import { ORG, useDeal } from '@/lib/deal';
 import { AMT, escrowUsd } from '@/lib/amounts';
 import { stagger } from '@/lib/motion';

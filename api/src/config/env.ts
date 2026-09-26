@@ -63,6 +63,11 @@ const schema = z.object({
   RATE_LIMIT_MAX: z.coerce.number().default(250),
   // Seconds to let in-flight requests drain before forcing exit.
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().default(10_000),
+
+  // ─── Identity & access (Block 3) ────────────────────────────────────────────
+  // JSON array of directory users with scrypt secret hashes. REQUIRED in
+  // production — without it the API refuses to start on the dev seed.
+  AUTH_USERS: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

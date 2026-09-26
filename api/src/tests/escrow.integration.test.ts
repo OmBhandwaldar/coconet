@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import supertest from 'supertest';
+import { authedRequest } from './helpers/authed-request.js';
 
 // Mock the on-chain client so routes can be exercised without a live Polygon node.
 const tx = { wait: async () => ({}) };
@@ -31,7 +31,7 @@ vi.mock('../polygon/escrow.client.js', () => ({
 }));
 
 const { default: app } = await import('../app.js');
-const request = supertest(app);
+const request = authedRequest();
 
 const validCreate = {
   escrow_payment_id: 'ESC-TEST-01',

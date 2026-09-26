@@ -5,6 +5,7 @@ import { connectGateway, disconnectGateway } from './fabric/gateway.js';
 import { connectPolygon } from './polygon/provider.js';
 import { startBridge } from './services/bridge.service.js';
 import { startActivityFeed } from './services/activity-feed.service.js';
+import { assertSafe } from './auth/users.js';
 
 async function tryConnectFabric(): Promise<boolean> {
   try {
@@ -35,6 +36,10 @@ async function tryConnectPolygon(): Promise<boolean> {
 }
 
 async function bootstrap(): Promise<void> {
+  // Fail fast rather than serving production traffic on the development user
+  // directory and its well-known secrets.
+  assertSafe();
+
   const [fabricOk, polygonOk] = await Promise.all([tryConnectFabric(), tryConnectPolygon()]);
 
   // Cross-chain bridge needs both chains; skip if either is down (API still serves).

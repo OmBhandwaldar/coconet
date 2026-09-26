@@ -8,10 +8,27 @@ export async function create(req: Request, res: Response, next: NextFunction): P
   } catch (err) { next(err); }
 }
 
+// Two fields on an organisation are not network-wide facts: risk_tier is the
+// platform's credit judgement of that member, and maker_checker_thresholds says
+// how large a transaction it approves on one signature. Block 1 stripped both
+// from chaincode events for exactly that reason — serving them from the read API
+// to any authenticated member would reopen the same exposure through the front
+// door. An org may see its own; the platform sees all.
+function redactOrg(org: Record<string, unknown>, viewerOrgId?: string, viewerOrgType?: string) {
+  const privileged = viewerOrgType === 'Platform' || viewerOrgId === org.org_id;
+  if (privileged) return org;
+  const { risk_tier, maker_checker_thresholds, ...rest } = org;
+  return rest;
+}
+
 export async function read(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
     const org = await service.getOrganization(req.params.id);
-    res.json({ success: true, data: org, correlationId: req.correlationId });
+    res.json({
+      success: true,
+      data: redactOrg(org as unknown as Record<string, unknown>, req.auth?.org_id, req.auth?.org_type),
+      correlationId: req.correlationId,
+    });
   } catch (err) { next(err); }
 }
 
