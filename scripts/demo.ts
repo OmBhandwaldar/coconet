@@ -27,10 +27,36 @@ function fail(msg: string): never { console.error(`\x1b[31m  ✗ ${msg}\x1b[0m`)
 
 interface ApiResp { success?: boolean; data?: any; error?: any; }
 
+// ─── Identity ─────────────────────────────────────────────────────────────────
+// The API requires authentication, and each action is restricted to the party
+// whose action it is. The demo therefore signs in as the real cast from
+// EXAMPLE-FLOW and switches actor per phase — which also proves the
+// authorisation model end to end rather than asserting it in a unit test.
+const tokens = new Map<string, string>();
+let actor = 'platform';
+
+function actingAs(name: string) { actor = name; }
+
+async function login(username: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ username, secret: `${username}-dev-secret` }),
+  });
+  const json = (await res.json()) as ApiResp;
+  if (!res.ok || !json.data?.token) fail(`login as ${username} failed: ${JSON.stringify(json.error ?? json)}`);
+  tokens.set(username, json.data.token);
+}
+
 async function call(method: string, path: string, body?: unknown): Promise<ApiResp> {
+  const headers: Record<string, string> = {};
+  if (body) headers['content-type'] = 'application/json';
+  const token = tokens.get(actor);
+  if (token) headers.authorization = `Bearer ${token}`;
+
   const res = await fetch(`${BASE}${path}`, {
     method,
-    headers: body ? { 'content-type': 'application/json' } : {},
+    headers,
     body: body ? JSON.stringify(body) : undefined,
   });
   let json: ApiResp = {};
@@ -57,6 +83,9 @@ async function ensureOrg(orgId: string, body: Record<string, unknown>) {
 async function main() {
   console.log(`\n\x1b[1mCocoNet MVP demo — run ${RUN}\x1b[0m  (${BASE})`);
 
+  for (const u of ['platform', 'rajesh', 'priya', 'suresh', 'kavitha', 'amit', 'nandita']) await login(u);
+  actingAs('platform');
+
   head('Onboarding — ensure Tata (buyer), Bharat (supplier), HDFC (lender) exist + approved');
   await ensureOrg('tata-001', { org_id: 'tata-001', legal_name: 'Tata Motors Ltd', org_type: 'Buyer', msp_id: 'BuyerMSP', registration_number: 'L28920MH1945PLC004520', gstin: '27AAACT2727Q1ZW', pan: 'AAACT2727Q', country: 'IN', contact_email: 'procurement@tatamotors.com', registered_address: 'Bombay House, Mumbai 400001' });
   await ensureOrg('bharat-001', { org_id: 'bharat-001', legal_name: 'Bharat Stampings Pvt Ltd', org_type: 'Supplier', msp_id: 'SupplierMSP', registration_number: 'U28910MH2002PTC135421', gstin: '27AABCB1234C1ZX', pan: 'AABCB1234C', country: 'IN', contact_email: 'sales@bharatstampings.com', registered_address: 'MIDC Phase II, Pune 411019' });
@@ -68,35 +97,48 @@ async function main() {
   const INVE = id('INVE'), ESC = id('ESC');
 
   head('Step 1–2 — Purchase Order issued + acknowledged');
+  actingAs('rajesh');          // Tata procurement manager
   let po = await expectOk('POST', '/api/trade-docs/purchase-orders', { po_id: PO, buyer_id: 'tata-001', supplier_id: 'bharat-001', currency: 'INR', gross_value: 25000000, item_description: 'Pressed Steel Body Panels', quantity: 10000, price_per_unit: 2500, delivery_terms: '45 days, Pune', payment_terms: '30 days', doc_hash: `po-${RUN}` });
   po.status === 'Issued' || fail(`PO status ${po.status}`); ok(`PO ${PO} → Issued (${inrUsd(25000000)})`);
+  actingAs('suresh');          // Bharat sales director
   po = await expectOk('PUT', `/api/trade-docs/purchase-orders/${PO}/acknowledge`, { supplier_id: 'bharat-001' });
   po.status === 'Acknowledged' || fail(`PO ${po.status}`); ok('PO → Acknowledged');
 
   head('Step 3–3A — Pre-shipment finance (advance, locks the PO)');
+  actingAs('kavitha');         // Bharat finance manager
   await expectOk('POST', '/api/finance/pre-shipment', { request_id: FRPRE, po_id: PO, requestor_org_id: 'bharat-001', requested_amount: 12000000, lender_id: 'hdfc-001' });
+  actingAs('amit');            // HDFC relationship manager
   const elig = await expectOk('PUT', `/api/finance/${FRPRE}/validate-eligibility`, undefined);
   elig.eligibility?.passed === true || fail('pre-shipment eligibility failed'); ok('eligibility passed (Rule-01 cross-read + Rule-02)');
   await expectOk('PUT', `/api/finance/${FRPRE}/quote`, { advance_rate: 0.48, interest_rate: 0.12, tenor_days: 45 });
   await expectOk('PUT', `/api/finance/${FRPRE}/approve`, { approved_amount: 12000000 });
+  actingAs('kavitha');         // the supplier accepts the offer
   const acc = await expectOk('PUT', `/api/finance/${FRPRE}/accept`, undefined);
   acc.security_interest_state === 'Perfected' || fail('lien not perfected'); ok(`accepted → lien Perfected, PO locked (${inrUsd(12000000)} advance)`);
+  actingAs('amit');            // the lender disburses
   const disb = await expectOk('PUT', `/api/finance/${FRPRE}/disburse`, { disbursement_ref: `NEFT-${RUN}` });
   disb.status === 'Disbursed' || fail('not disbursed'); ok('pre-shipment loan Disbursed');
 
   head('Step 7–9 — GRN accepted, invoice raised, 3-way match, approved');
+  actingAs('rajesh');          // the buyer records what arrived
   await expectOk('POST', '/api/trade-docs/grn', { grn_id: GRN, po_id: PO, received_qty: 10000 });
   await expectOk('PUT', `/api/trade-docs/grn/${GRN}/accept`, undefined); ok('GRN accepted (10,000 units)');
+  actingAs('kavitha');         // the supplier invoices
   await expectOk('POST', '/api/trade-docs/invoices', { invoice_id: INVD, supplier_id: 'bharat-001', buyer_id: 'tata-001', po_id: PO, grn_id: GRN, amount: 24750000, quantity: 9900, currency: 'INR', due_date: '2024-12-31', doc_hash: `invd-${RUN}` });
   const m = await expectOk('PUT', `/api/trade-docs/invoices/${INVD}/match`, undefined);
   m.match_result?.passed === true || fail('3-way match failed'); ok(`invoice ${inrUsd(24750000)} → 3-way match passed`);
+  actingAs('priya');           // Tata senior head approves
   await expectOk('PUT', `/api/trade-docs/invoices/${INVD}/approve`, undefined); ok('invoice Approved');
 
   head('Step 10–10A — Invoice discounting with net settlement');
+  actingAs('kavitha');
   await expectOk('POST', '/api/finance/invoice-discounting', { request_id: FRDISC, invoice_id: INVD, requestor_org_id: 'bharat-001', requested_amount: 24255000, lender_id: 'hdfc-001', discount_rate: 0.02 });
+  actingAs('amit');
   await expectOk('PUT', `/api/finance/${FRDISC}/validate-eligibility`, undefined);
   await expectOk('PUT', `/api/finance/${FRDISC}/quote`, { discount_rate: 0.02 });
+  actingAs('kavitha');
   await expectOk('PUT', `/api/finance/${FRDISC}/accept`, undefined); ok('invoice assigned to HDFC');
+  actingAs('amit');
   const settle = await expectOk('PUT', `/api/finance/${FRDISC}/disburse`, { disbursement_ref: `DISC-${RUN}`, pre_shipment_request_id: FRPRE });
   const s = settle.settlement;
   s.net_to_supplier === 12077466 || fail(`net ${s.net_to_supplier} != 12077466`);
@@ -104,11 +146,14 @@ async function main() {
   ok(`net to Bharat: ${inrUsd(s.net_to_supplier)}  (pre-shipment loan auto-repaid)`);
 
   head('Step 11–13 — Escrow created, funded, conditions, auto-released (cross-chain)');
+  actingAs('kavitha');
   await expectOk('POST', '/api/trade-docs/invoices', { invoice_id: INVE, supplier_id: 'bharat-001', buyer_id: 'tata-001', po_id: PO, grn_id: GRN, amount: 24750000, quantity: 9900, currency: 'INR', due_date: '2024-12-31', doc_hash: `inve-${RUN}` });
   await expectOk('PUT', `/api/trade-docs/invoices/${INVE}/match`, undefined);
+  actingAs('rajesh');          // escrow is buyer-funded (BR-12)
   await expectOk('POST', '/api/escrow/instructions', { escrow_payment_id: ESC, buyer_org_id: 'tata-001', beneficiary_org_id: 'hdfc-001', linked_invoice_id: INVE, amount_usd: 269022 });
   const funded = await expectOk('POST', `/api/escrow/instructions/${ESC}/fund`, undefined);
   funded.status === 'Funded' || fail('escrow not funded'); ok('escrow funded ($269,022 USDC locked in vault on Polygon)');
+  actingAs('priya');
   await expectOk('PUT', `/api/trade-docs/invoices/${INVE}/approve`, undefined);
   ok('invoice approved on Fabric → bridge picking up InvoiceApproved...');
 
@@ -124,6 +169,7 @@ async function main() {
 
   head('Sad path — escrow refunded to buyer before release (Rule-0C)');
   const ESCR = id('ESCR');
+  actingAs('rajesh');
   await expectOk('POST', '/api/escrow/instructions', { escrow_payment_id: ESCR, buyer_org_id: 'tata-001', beneficiary_org_id: 'hdfc-001', linked_invoice_id: id('INVR'), amount_usd: 50000 });
   const rfunded = await expectOk('POST', `/api/escrow/instructions/${ESCR}/fund`, undefined);
   rfunded.status === 'Funded' || fail('refund-demo escrow not funded'); ok('a second escrow funded ($50,000 USDC locked)');
