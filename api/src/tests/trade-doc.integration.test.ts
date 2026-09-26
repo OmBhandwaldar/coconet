@@ -94,7 +94,7 @@ describe('GRN routes', () => {
       .post('/api/trade-docs/grn')
       .send({ grn_id: 'TM-GRN-2024-0892', po_id: 'TM-PO-2024-0892', received_qty: 10000 });
     expect(res.status).toBe(201);
-    expect(fabricService.invoke).toHaveBeenCalledWith('trade-doc-cc', 'createGRN', 'TM-GRN-2024-0892', 'TM-PO-2024-0892', '10000');
+    expect(fabricService.invoke).toHaveBeenCalledWith('trade-doc-cc', 'createGRN', 'TM-GRN-2024-0892', 'TM-PO-2024-0892', '10000', '');
   });
 
   it('accepts a GRN', async () => {
