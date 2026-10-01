@@ -138,7 +138,7 @@ fi
         --version "$VERSION" \
         --package-id "$PKG_ID" \
         --sequence "$SEQUENCE" \
-        "${POLICY_FLAG[@]}" \
+        ${POLICY_FLAG[@]+"${POLICY_FLAG[@]}"} \
         --orderer orderer.coconet.local:7050 \
         --tls \
         --cafile "$ORDERER_CA" \
@@ -153,7 +153,7 @@ docker exec "${ENV_BUYER[@]}" coconet-cli peer lifecycle chaincode checkcommitre
     --name "$CC_NAME" \
     --version "$VERSION" \
     --sequence "$SEQUENCE" \
-        "${POLICY_FLAG[@]}" \
+        ${POLICY_FLAG[@]+"${POLICY_FLAG[@]}"} \
     --tls \
     --cafile "$ORDERER_CA" \
     --output json \
@@ -173,7 +173,7 @@ docker exec "${ENV_BUYER[@]}" coconet-cli peer lifecycle chaincode commit \
     --name "$CC_NAME" \
     --version "$VERSION" \
     --sequence "$SEQUENCE" \
-        "${POLICY_FLAG[@]}" \
+        ${POLICY_FLAG[@]+"${POLICY_FLAG[@]}"} \
     --orderer orderer.coconet.local:7050 \
     --tls \
     --cafile "$ORDERER_CA" \
