@@ -26,6 +26,7 @@ const buyer = requireOrgType('Buyer');
 const supplier = requireOrgType('Supplier');
 
 router.post('/purchase-orders', buyer, validate(createPOSchema), controller.createPO);
+router.put('/purchase-orders/:id/issue', buyer, validate(poIdParamSchema), controller.issuePO);
 router.get('/purchase-orders/:id', validate(poIdParamSchema), controller.getPO);
 router.put('/purchase-orders/:id/acknowledge', supplier, validate(acknowledgePOSchema), controller.acknowledgePO);
 router.put('/purchase-orders/:id/amend', buyer, validate(amendPOSchema), controller.amendPO);

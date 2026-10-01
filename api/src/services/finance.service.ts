@@ -2,6 +2,7 @@ import { env } from '../config/env.js';
 import { mspForOrg, newSalt, partyMsps } from '../fabric/private-data.js';
 import { invoke, invokeWithTransient, query } from '../fabric/fabric.service.js';
 import { getInvoice } from './trade-doc.service.js';
+import type { Gated } from './approvals.service.js';
 
 export type ProductType = 'PreShipment' | 'InvoiceDiscounting';
 export type AssetType = 'PO' | 'Invoice';
@@ -108,8 +109,21 @@ export async function submitQuote(requestId: string, quote: Quote): Promise<Fina
   // Advance rate, discount rate, interest and tenor — the lender's pricing.
   return invokeWithTransient<FinanceRequest>(cc, 'submitQuote', [requestId], { ...quote, salt: newSalt() });
 }
-export async function approveFinancing(requestId: string, approvedAmount: number): Promise<FinanceRequest> {
-  return invokeWithTransient<FinanceRequest>(cc, 'approveFinancing', [requestId], { approved_amount: approvedAmount });
+/**
+ * The lender commits to a facility amount (BR-09). The maker sends the figure;
+ * the checker sends nothing, because the figure under approval is replayed from
+ * the approval record — which is what stops a checker signing off one amount
+ * and committing another.
+ */
+export async function approveFinancing(
+  requestId: string, approvedAmount?: number,
+): Promise<Gated<FinanceRequest>> {
+  if (approvedAmount === undefined) {
+    return invoke<Gated<FinanceRequest>>(cc, 'approveFinancing', requestId);
+  }
+  return invokeWithTransient<Gated<FinanceRequest>>(
+    cc, 'approveFinancing', [requestId], { approved_amount: approvedAmount },
+  );
 }
 export async function acceptOffer(requestId: string): Promise<FinanceRequest> {
   return invoke<FinanceRequest>(cc, 'acceptOffer', requestId);

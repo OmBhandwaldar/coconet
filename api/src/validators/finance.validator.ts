@@ -42,7 +42,10 @@ export const quoteSchema = z.object({
 
 export const approveSchema = z.object({
   params: z.object({ id: z.string().min(1) }),
-  body: z.object({ approved_amount: z.number().positive() }),
+  // Optional, because the checker's call carries no figure: the amount under
+  // approval is replayed from the approval record, so a checker cannot sign
+  // off one number and commit another (BR-09).
+  body: z.object({ approved_amount: z.number().positive().optional() }),
 });
 
 export const disburseSchema = z.object({

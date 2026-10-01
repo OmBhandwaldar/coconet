@@ -1,6 +1,7 @@
 import { NextFunction, Request, Response } from 'express';
 import * as service from '../services/trade-doc.service.js';
 import * as documents from '../services/document.service.js';
+import { respondGated } from './approvals.controller.js';
 import { ValidationError } from '../errors/AppError.js';
 
 // ─── Purchase Orders ──────────────────────────────────────────────────────────
@@ -8,6 +9,12 @@ export async function createPO(req: Request, res: Response, next: NextFunction):
   try {
     const po = await service.createPO(req.body);
     res.status(201).json({ success: true, data: po, correlationId: req.correlationId });
+  } catch (err) { next(err); }
+}
+
+export async function issuePO(req: Request, res: Response, next: NextFunction): Promise<void> {
+  try {
+    respondGated(req, res, await service.issuePO(req.params.id));
   } catch (err) { next(err); }
 }
 
@@ -63,8 +70,7 @@ export async function getGRN(req: Request, res: Response, next: NextFunction): P
 
 export async function acceptGRN(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const grn = await service.acceptGRN(req.params.id);
-    res.json({ success: true, data: grn, correlationId: req.correlationId });
+    respondGated(req, res, await service.acceptGRN(req.params.id));
   } catch (err) { next(err); }
 }
 
@@ -106,8 +112,7 @@ export async function getMatchResult(req: Request, res: Response, next: NextFunc
 
 export async function approveInvoice(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const invoice = await service.approveInvoice(req.params.id);
-    res.json({ success: true, data: invoice, correlationId: req.correlationId });
+    respondGated(req, res, await service.approveInvoice(req.params.id));
   } catch (err) { next(err); }
 }
 

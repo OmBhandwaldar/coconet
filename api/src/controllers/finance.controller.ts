@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express';
 import * as service from '../services/finance.service.js';
+import { respondGated } from './approvals.controller.js';
 
 export async function createPreShipment(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
@@ -38,8 +39,7 @@ export async function submitQuote(req: Request, res: Response, next: NextFunctio
 
 export async function approve(req: Request, res: Response, next: NextFunction): Promise<void> {
   try {
-    const fr = await service.approveFinancing(req.params.id, req.body.approved_amount);
-    res.json({ success: true, data: fr, correlationId: req.correlationId });
+    respondGated(req, res, await service.approveFinancing(req.params.id, req.body.approved_amount));
   } catch (err) { next(err); }
 }
 
