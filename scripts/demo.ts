@@ -25,7 +25,7 @@ function ok(msg: string) { console.log(`\x1b[32m  ✓ ${msg}\x1b[0m`); }
 function head(msg: string) { console.log(`\n\x1b[36m[${++stepNo}] ${msg}\x1b[0m`); }
 function fail(msg: string): never { console.error(`\x1b[31m  ✗ ${msg}\x1b[0m`); process.exit(1); }
 
-interface ApiResp { success?: boolean; data?: any; error?: any; }
+interface ApiResp { success?: boolean; data?: any; error?: any; pending_approval?: boolean; }
 
 // ─── Identity ─────────────────────────────────────────────────────────────────
 // The API requires authentication, and each action is restricted to the party
@@ -74,6 +74,46 @@ async function expectOk(method: string, path: string, body: unknown, tolerateExi
   fail(`${method} ${path} → ${JSON.stringify(r.error ?? r)}`);
 }
 
+/**
+ * Maker-checker, end to end (BR-09). The maker's call parks the transition and
+ * answers 202; a second user in the same org calls the SAME endpoint and the
+ * transition commits. Both halves are asserted, because a gate that silently
+ * stopped firing would otherwise look exactly like a passing demo.
+ */
+async function makerChecker(
+  maker: string, checker: string, method: string, path: string, body?: unknown,
+): Promise<any> {
+  actingAs(maker);
+  const proposed = await call(method, path, body);
+  if (!proposed.success) fail(`${method} ${path} (maker) → ${JSON.stringify(proposed.error ?? proposed)}`);
+  if (!proposed.pending_approval) {
+    fail(`${path} completed on one signature — the threshold is not gating it`);
+  }
+  ok(`proposed by ${maker} → PendingApproval (${proposed.data.tx_type})`);
+
+  actingAs(checker);
+  const signed = await call(method, path);
+  if (!signed.success) fail(`${method} ${path} (checker) → ${JSON.stringify(signed.error ?? signed)}`);
+  if (signed.pending_approval) fail(`${path} still pending after ${checker} signed`);
+  ok(`countersigned by ${checker}`);
+  return signed.data;
+}
+
+/** The maker cannot be their own checker — asserted against the live chain. */
+async function assertSelfApprovalRefused(maker: string, method: string, path: string, body?: unknown) {
+  actingAs(maker);
+  const first = await call(method, path, body);
+  if (!first.pending_approval) fail(`${path} was not gated — cannot test self-approval`);
+  const again = await call(method, path);
+  if (again.success) fail(`${maker} approved their own proposal on ${path}`);
+  ok(`${maker} refused as their own checker: ${String(again.error?.message ?? '').slice(0, 60)}`);
+}
+
+async function setThreshold(orgId: string, txType: string, amount: number) {
+  await expectOk('PUT', `/api/onboarding/organizations/${orgId}/maker-checker-thresholds/${txType}`,
+    { threshold: amount });
+}
+
 async function ensureOrg(orgId: string, body: Record<string, unknown>) {
   await expectOk('POST', '/api/onboarding/organizations', body, true);
   // approve (idempotent: if already Approved the chaincode rejects → tolerate)
@@ -92,14 +132,28 @@ async function main() {
   await ensureOrg('hdfc-001', { org_id: 'hdfc-001', legal_name: 'HDFC Bank Ltd', org_type: 'Lender', msp_id: 'LenderMSP', registration_number: 'L65920MH1994PLC080618', gstin: '27AAACH2702H1Z9', pan: 'AAACH2702H', country: 'IN', contact_email: 'tradefinance@hdfcbank.com', registered_address: 'HDFC Bank House, Mumbai 400013' });
   ok('3 orgs ready (Approved)');
 
+  head('Maker-checker thresholds (BR-09, Rule-06)');
+  // An unset threshold is zero, which means "two signatures for everything" —
+  // the safe default, but it makes every path look the same. These figures let
+  // one run show both: Tata's ₹2.5cr order and ₹2.47cr invoice breach their
+  // thresholds, while goods receipt sits under a deliberately high one.
+  await setThreshold('tata-001', 'PO_ISSUE', 5000000);
+  await setThreshold('tata-001', 'INVOICE_APPROVE', 5000000);
+  await setThreshold('tata-001', 'GRN_ACCEPT', 300000000);
+  await setThreshold('hdfc-001', 'FINANCE_APPROVE', 5000000);
+  ok('Tata: PO ₹50L, invoice ₹50L, GRN ₹30cr · HDFC: financing ₹50L');
+
   const PO = id('PO'), GRN = id('GRN');
   const FRPRE = id('FRPRE'), INVD = id('INVD'), FRDISC = id('FRDISC');
   const INVE = id('INVE'), ESC = id('ESC');
 
-  head('Step 1–2 — Purchase Order issued + acknowledged');
+  head('Step 1–2 — Purchase Order drafted, issued under two signatures, acknowledged');
   actingAs('rajesh');          // Tata procurement manager
   let po = await expectOk('POST', '/api/trade-docs/purchase-orders', { po_id: PO, buyer_id: 'tata-001', supplier_id: 'bharat-001', currency: 'INR', gross_value: 25000000, item_description: 'Pressed Steel Body Panels', quantity: 10000, price_per_unit: 2500, delivery_terms: '45 days, Pune', payment_terms: '30 days', doc_hash: `po-${RUN}` });
-  po.status === 'Issued' || fail(`PO status ${po.status}`); ok(`PO ${PO} → Issued (${inrUsd(25000000)})`);
+  po.status === 'Draft' || fail(`PO status ${po.status}, expected Draft`); ok(`PO ${PO} drafted (${inrUsd(25000000)})`);
+  // Rajesh proposes; Priya, the senior procurement head, countersigns.
+  po = await makerChecker('rajesh', 'priya', 'PUT', `/api/trade-docs/purchase-orders/${PO}/issue`);
+  po.status === 'Issued' || fail(`PO status ${po.status}`); ok(`PO → Issued`);
   actingAs('suresh');          // Bharat sales director
   po = await expectOk('PUT', `/api/trade-docs/purchase-orders/${PO}/acknowledge`, { supplier_id: 'bharat-001' });
   po.status === 'Acknowledged' || fail(`PO ${po.status}`); ok('PO → Acknowledged');
@@ -111,7 +165,11 @@ async function main() {
   const elig = await expectOk('PUT', `/api/finance/${FRPRE}/validate-eligibility`, undefined);
   elig.eligibility?.passed === true || fail('pre-shipment eligibility failed'); ok('eligibility passed (Rule-01 cross-read + Rule-02)');
   await expectOk('PUT', `/api/finance/${FRPRE}/quote`, { advance_rate: 0.48, interest_rate: 0.12, tenor_days: 45 });
-  await expectOk('PUT', `/api/finance/${FRPRE}/approve`, { approved_amount: 12000000 });
+  // HDFC's credit decision needs its credit head as well as the RM.
+  await assertSelfApprovalRefused('amit', 'PUT', `/api/finance/${FRPRE}/approve`, { approved_amount: 12000000 });
+  const approved = await makerChecker('amit', 'nandita', 'PUT', `/api/finance/${FRPRE}/approve`, { approved_amount: 12000000 });
+  approved.approved_amount === 12000000 || fail(`approved ${approved.approved_amount}, expected the figure Amit proposed`);
+  ok(`facility approved at the maker's figure (${inrUsd(12000000)})`);
   actingAs('kavitha');         // the supplier accepts the offer
   const acc = await expectOk('PUT', `/api/finance/${FRPRE}/accept`, undefined);
   acc.security_interest_state === 'Perfected' || fail('lien not perfected'); ok(`accepted → lien Perfected, PO locked (${inrUsd(12000000)} advance)`);
@@ -122,13 +180,16 @@ async function main() {
   head('Step 7–9 — GRN accepted, invoice raised, 3-way match, approved');
   actingAs('rajesh');          // the buyer records what arrived
   await expectOk('POST', '/api/trade-docs/grn', { grn_id: GRN, po_id: PO, received_qty: 10000 });
-  await expectOk('PUT', `/api/trade-docs/grn/${GRN}/accept`, undefined); ok('GRN accepted (10,000 units)');
+  // Below Tata's GRN threshold, so one signature carries it — the other half
+  // of the gate, and the reason the thresholds above are not all the same.
+  const grn = await expectOk('PUT', `/api/trade-docs/grn/${GRN}/accept`, undefined);
+  grn.status === 'Accepted' || fail(`GRN ${grn.status}`); ok('GRN accepted on one signature (10,000 units, under ₹30cr)');
   actingAs('kavitha');         // the supplier invoices
   await expectOk('POST', '/api/trade-docs/invoices', { invoice_id: INVD, supplier_id: 'bharat-001', buyer_id: 'tata-001', po_id: PO, grn_id: GRN, amount: 24750000, quantity: 9900, currency: 'INR', due_date: '2024-12-31', doc_hash: `invd-${RUN}` });
   const m = await expectOk('PUT', `/api/trade-docs/invoices/${INVD}/match`, undefined);
   m.match_result?.passed === true || fail('3-way match failed'); ok(`invoice ${inrUsd(24750000)} → 3-way match passed`);
-  actingAs('priya');           // Tata senior head approves
-  await expectOk('PUT', `/api/trade-docs/invoices/${INVD}/approve`, undefined); ok('invoice Approved');
+  const approvedInv = await makerChecker('rajesh', 'priya', 'PUT', `/api/trade-docs/invoices/${INVD}/approve`);
+  approvedInv.status === 'Approved' || fail(`invoice ${approvedInv.status}`); ok('invoice Approved');
 
   head('Step 10–10A — Invoice discounting with net settlement');
   actingAs('kavitha');
@@ -153,8 +214,7 @@ async function main() {
   await expectOk('POST', '/api/escrow/instructions', { escrow_payment_id: ESC, buyer_org_id: 'tata-001', beneficiary_org_id: 'hdfc-001', linked_invoice_id: INVE, amount_usd: 269022 });
   const funded = await expectOk('POST', `/api/escrow/instructions/${ESC}/fund`, undefined);
   funded.status === 'Funded' || fail('escrow not funded'); ok('escrow funded ($269,022 USDC locked in vault on Polygon)');
-  actingAs('priya');
-  await expectOk('PUT', `/api/trade-docs/invoices/${INVE}/approve`, undefined);
+  await makerChecker('rajesh', 'priya', 'PUT', `/api/trade-docs/invoices/${INVE}/approve`);
   ok('invoice approved on Fabric → bridge picking up InvoiceApproved...');
 
   // Poll for the bridge-driven release.
