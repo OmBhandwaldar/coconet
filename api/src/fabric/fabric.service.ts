@@ -44,6 +44,9 @@ async function withContract<T>(
 const PRIVATE_DATA_CHAINCODES = new Set([
   env.FABRIC_CHAINCODE_TRADE_DOC,
   env.FABRIC_CHAINCODE_FINANCE,
+  // onboarding-cc joined this set when the risk tier and maker-checker
+  // thresholds moved into the collection.
+  env.FABRIC_CHAINCODE_ONBOARDING,
 ]);
 
 function endorsingOrgsFor(ccName: string): string[] | undefined {

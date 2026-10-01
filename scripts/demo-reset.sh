@@ -45,7 +45,10 @@ step "Joining the channel..."
 bash scripts/setup-channel.sh
 
 step "Deploying chaincodes (fresh channel → sequence 1)..."
-bash scripts/deploy-chaincode.sh --name onboarding-cc --dir onboarding-cc --version 1.0 --sequence 1
+# onboarding-cc holds the risk tier and maker-checker thresholds privately, so
+# it needs the same custodian-endorsed policy as the other two.
+bash scripts/deploy-chaincode.sh --name onboarding-cc --dir onboarding-cc --version 2.0 --sequence 1 \
+  --signature-policy "OR('PlatformMSP.member')"
 # trade-doc-cc writes private data to the platform org's implicit collection, and
 # only that org can endorse such a write — so a majority-of-orgs policy could
 # never commit. PRIVACY-DESIGN.md §2.2.1 explains why the canonical copy lives

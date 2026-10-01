@@ -8,13 +8,17 @@ const { expect } = chai;
 
 // Minimal Context + stub mock
 function makeCtx(state: Record<string, Buffer> = {}) {
+  const priv: Record<string, Buffer> = {};
   const stub = {
+    getPrivateData: sinon.stub().callsFake(async (_c: string, k: string) => priv[k] ?? Buffer.alloc(0)),
+    putPrivateData: sinon.stub().callsFake(async (_c: string, k: string, v: Buffer) => { priv[k] = v; }),
+    getTxID: sinon.stub().returns('tx-deterministic-salt'),
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
   };
-  return { stub } as any;
+  return { stub, clientIdentity: { getMSPID: sinon.stub().returns('PlatformMSP') }, __private: priv } as any;
 }
 
 // Valid Tata Motors fixture — reused everywhere a complete payload is needed
