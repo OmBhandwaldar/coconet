@@ -18,7 +18,7 @@ Block 4 implements.
 | 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [x] Done |
 | 3 | Identity & access | `feat/harden-03-identity` | [~] Mostly done — Fabric CA outstanding |
 | 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [x] Done — ABAC defers with Fabric CA |
-| 5 | Maker-checker | `feat/harden-05-maker-checker` | [ ] Not started |
+| 5 | Maker-checker | `feat/harden-05-maker-checker` | [x] Done |
 | 6 | Bridge durability | `feat/harden-06-bridge` | [ ] Not started |
 | 7 | Polygon contracts & settlement | `feat/harden-07-contracts` | [ ] Not started |
 | 8 | Missing chaincodes | `feat/harden-08-chaincodes` | [ ] Not started |
@@ -287,16 +287,86 @@ not applicable — mongoose is a dependency but nothing in the API uses it.
 
 ## Block 5 — Maker-checker
 
-> Depends on Block 3 — without per-user identities there is no maker to distinguish from a checker.
+> **[x] Done — 1 Oct 2026.** Four gated transitions, two signatures above the
+> approving organisation's threshold, verified on live peers.
 
-- `PendingApproval` state in each chaincode
-- **Checker ≠ maker assertion** against the submitting identity
-- Threshold lookup before every transition above the configured amount (`getMakerCheckerThreshold` exists)
-- Approval-queue endpoints and portal UI
+- [x] `PendingApproval` state in `trade-doc-cc` and `finance-cc`
+- [x] **Checker ≠ maker** asserted on the submitting X.509 identity
+- [x] Threshold lookup before every gated transition
+- [x] Approval-queue endpoints and portal UI
 
-**TDD:** required — two simulated MSP identities; assert self-approval is rejected.
+**The gates and the value each is judged on**
 
-**Commits:** ~8 small.
+| Transaction type | Transition | Approving org | Amount |
+|---|---|---|---|
+| `PO_ISSUE` | Draft → Issued | buyer | order gross value |
+| `GRN_ACCEPT` | Received → Accepted | buyer | the order's gross value |
+| `INVOICE_APPROVE` | Matched → Approved | buyer | invoice amount |
+| `FINANCE_APPROVE` | records the facility amount | lender | approved amount |
+
+`Draft` previously existed in the BRD state machine and was dead — `createPO`
+wrote `Issued` directly, with a comment deferring maker-checker to this block.
+A PO is now born a draft and `issuePO` is the signed act, since issuing is what
+commits the buyer.
+
+**Three properties the gate holds**
+
+*The checker cannot be the maker* — asserted on `ctx.clientIdentity.getID()`,
+not MSP. Two users of the same organisation are the point, so comparing MSPs
+would compare a value equal by construction. This is what Block 3's per-caller
+gateway was built for.
+
+*The checker approves what the maker proposed* — the maker's payload is stored
+with the approval record and replayed from storage when the second signature
+arrives. Without this, maker-checker counts signatures without constraining
+what was signed: a checker could approve one amount and commit another.
+
+*A parked transition still leaves a record* — the gate returns a pending result
+rather than throwing, because a thrown error rolls back the approval record
+along with everything else. Fabric offers no way to write state and abort. The
+API therefore answers **202 Accepted**, not 200 with an unchanged entity.
+
+**Privacy** — the approval record is split like every other entity: who must
+sign is public, the amount under approval and the threshold it breached are
+private, and so is the free-text rejection reason. Verified on live peers:
+
+| Reader | Sees |
+|---|---|
+| Platform (custodian) | signers, `amount` 25000000, `threshold` 5000000 |
+| LenderMSP, SupplierMSP | `tx_type`, `status`, `maker_id` `User1@buyer`, `checker_id` `User2@buyer` — no figures |
+
+**Fails closed** — an unset threshold is 0, so an unconfigured organisation needs
+two signatures for everything; a threshold lookup that cannot be completed
+aborts the transition rather than letting it through on one signature. And
+entitlement to an org's thresholds *is* the authority to act on its behalf:
+`getOrganization` discloses them only to the org itself or the platform
+(decision 19), so their absence is the access decision. A supplier could
+previously approve the invoice it had just raised, because being a party to the
+deal was the only check.
+
+**Two defects found by building this**
+
+`listPendingApprovals(ctx, orgId = '')` — a defaulted parameter breaks
+fabric-contract-api's type inference, so the chaincode container exited on
+launch and every transaction failed with "failed to collect enough
+endorsements". The error named the parameter, not the default.
+
+The API was discarding a failed endorsement's `details`, where each peer's real
+reason lives, so a maker who self-approved got a gRPC status rather than "a
+checker must be a different user". Found by the demo, which asserts that refusal
+and could only print the summary.
+
+**TDD:** followed — the specification was committed as a failing test first, in
+both chaincodes.
+
+**Tests:** 28 onboarding-cc · 58 trade-doc-cc · 30 finance-cc · 106 API · 20
+contracts. `npm run demo` green end to end, with uneven thresholds so one run
+shows both the two-signature and the single-signature path.
+
+**Still open:** `audit-cc.logEvent` on each approval (Block 8 — `audit-cc` does
+not exist); maker-checker on `approveOrganization` in `onboarding-cc`, which is
+a consortium decision rather than an organisation's own and needs a different
+approving-party model.
 
 ---
 
