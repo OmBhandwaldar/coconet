@@ -17,7 +17,7 @@ Block 4 implements.
 | 1 | Event payload scrub | `feat/harden-01-events` | [x] Done |
 | 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [x] Done |
 | 3 | Identity & access | `feat/harden-03-identity` | [~] Mostly done — Fabric CA outstanding |
-| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [~] In progress — trade docs migrated; **blocked on a commit-status hang** |
+| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [~] In progress — trade documents migrated and verified on-chain |
 | 5 | Maker-checker | `feat/harden-05-maker-checker` | [ ] Not started |
 | 6 | Bridge durability | `feat/harden-06-bridge` | [ ] Not started |
 | 7 | Polygon contracts & settlement | `feat/harden-07-contracts` | [ ] Not started |
@@ -227,32 +227,34 @@ write; chaincode test harness with private-data, transient and MSP support;
   are endorsed by a single organisation. Signatures still carry the acting user,
   so attribution holds, but no member can independently endorse a write.
 
-**BLOCKER — gateway commit-status hangs after a private-data transaction.**
+**Resolved — there was no blocker.** The `DEADLINE_EXCEEDED` failures on
+`validateEligibility`, `runThreeWayMatch` and `acceptOffer` were environmental,
+not a defect:
 
-Symptom: `validateEligibility`, `runThreeWayMatch` and `acceptOffer` fail with
-`DEADLINE_EXCEEDED` after 140–300s. The demo stops at whichever comes first.
+- the stack was still settling after repeated chaincode deploys (a new container
+  per chaincode per peer starts on first invoke), and
+- `tsx watch` was restarting the API mid-run while chaincode and service files
+  were being edited, cancelling in-flight commit waits.
 
-**The transactions themselves succeed.** After a 145s timeout on
-`validateEligibility`, querying the chain directly shows the finance request at
-`Under Review` — eligibility passed, the write committed, block height advanced.
-Peer logs show endorsement completing in 5–18ms with `grpc.code=OK`; it is the
-`CommitStatus` call that never returns, ending in `context canceled`.
+The hypothesis recorded here — that the gateway routed commit-status to a peer of
+the signing org that the host could not resolve — was **tested and disproved**:
+the identical `validateEligibility` call completes in 2s both as `platform`
+(the gateway peer's own org) and as `amit` (LenderMSP). On a settled stack the
+full demo passes end to end, twice in a row.
 
-So the ledger is correct and only the client's wait-for-commit is broken. Ruled
-out: accumulated ledger state (reproduces on a clean reset), duplicate API
-processes (one), chaincode container sprawl (15 = 3 × 5 peers, normal), and
-endorsement policy (endorsement returns OK).
+One real fix did come out of the investigation and is kept: transactions touching
+a private collection now name their endorsing org on *every* invoke, not just the
+transient ones. Without it the gateway offers peers that do not hold the
+collection and the call blocks until its deadline — that part was genuine, and it
+is what made the cross-chaincode lien lock hang.
 
-Most likely the gateway routes commit-status to a peer of the *signing* org,
-whose container hostname the host cannot resolve — the same docker-vs-host DNS
-problem that made service discovery fail earlier in this block. That would also
-explain why it appeared only once non-Platform identities (Block 3) and
-private-data endorsement targeting (Block 4) were both in play.
+**Verified on-chain, twice, on live peers.** Querying the same record through
+`peer chaincode query`:
 
-**Next step:** confirm by submitting the same call as `platform` (whose org owns
-the gateway peer) versus `amit`. If platform succeeds, the fix is either host
-aliases for the peer hostnames, running the API inside the compose network, or
-routing commit-status explicitly at the gateway peer.
+| Record | PlatformMSP (party) | Non-party org |
+|---|---|---|
+| Purchase order | `gross_value` 25000000, `price_per_unit` 2500, quantity, description | index only — no figures |
+| Invoice | `amount` 24750000, `quantity` 9900, `currency` INR, salt | `amount`, `quantity`, `currency`, salt all **absent** |
 
 **Remaining after that:** `finance-cc` payload split (GRN and invoice are done);
 per-org activity feed filtering; the two-deal leak test across two lenders. ABAC defers with Fabric CA (Block 3). MongoDB partitioning is
