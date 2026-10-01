@@ -34,6 +34,22 @@ async function withContract<T>(
   }
 }
 
+// Chaincodes whose transactions touch a private collection — on read as well as
+// write. Their endorsement policy is OR('PlatformMSP.member') because only the
+// custodian org can endorse against its own implicit collection
+// (PRIVACY-DESIGN.md §2.2.1, §3.6). Naming the endorsing org explicitly keeps
+// the gateway from discovering peers that do not hold the collection and then
+// blocking until the deadline — which is how this first showed up: a
+// cross-chaincode lien lock hanging for two minutes rather than failing.
+const PRIVATE_DATA_CHAINCODES = new Set([
+  env.FABRIC_CHAINCODE_TRADE_DOC,
+  env.FABRIC_CHAINCODE_FINANCE,
+]);
+
+function endorsingOrgsFor(ccName: string): string[] | undefined {
+  return PRIVATE_DATA_CHAINCODES.has(ccName) ? [env.FABRIC_MSP_ID] : undefined;
+}
+
 // Submit a transaction (state-changing). Goes through endorse → order → commit.
 export async function invoke<T = unknown>(
   ccName: string,
@@ -41,7 +57,12 @@ export async function invoke<T = unknown>(
   ...args: string[]
 ): Promise<T> {
   logger.debug({ chaincode: ccName, fn, args }, 'Fabric invoke');
-  return withContract<T>(ccName, fn, (c) => c.submitTransaction(fn, ...args));
+  const endorsingOrganizations = endorsingOrgsFor(ccName);
+  return withContract<T>(ccName, fn, (c) =>
+    endorsingOrganizations
+      ? c.submit(fn, { arguments: args, endorsingOrganizations })
+      : c.submitTransaction(fn, ...args),
+  );
 }
 
 /**
@@ -70,7 +91,7 @@ export async function invokeWithTransient<T = unknown>(
     c.submit(fn, {
       arguments: args,
       transientData: { payload: Buffer.from(JSON.stringify(transient)) },
-      endorsingOrganizations: [env.FABRIC_MSP_ID],
+      endorsingOrganizations: endorsingOrgsFor(ccName) ?? [env.FABRIC_MSP_ID],
     }),
   );
 }
