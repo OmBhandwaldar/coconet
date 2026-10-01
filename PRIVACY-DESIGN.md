@@ -497,3 +497,63 @@ cheaper than after; all three would otherwise need rewriting.
 - BRD/SRS v1.1 §7 (BR-06, BR-10), §19 (NFR-05, NFR-06)
 - [CLAUDE.md](CLAUDE.md) §5 — channel and PDC overview, now pointing here
 - [MVP-PLAN.md](MVP-PLAN.md) Ring 4 — original PDC plan, superseded by this document
+
+---
+
+## 11. Known limitations (accepted)
+
+Things that are true of the system as built, decided deliberately rather than overlooked. Each is
+accepted for a pilot and carries its upgrade path.
+
+### 11.1 A single organisation endorses trade and finance writes
+
+**Accepted 1 October 2026.** Endorsement is `OR('PlatformMSP.member')` (§3.6). No consortium member
+can independently endorse a trade document or financing record.
+
+Attribution is unaffected — the transaction still carries the acting user's signature, so Rajesh's
+purchase order is signed by Rajesh and NFR-05 holds. What is lost is *independent attestation*: the
+endorsement that makes the write valid comes from Platform alone, so a member cannot verify a write
+by endorsing it.
+
+This follows directly from platform-custodied payloads (§2.2.1) — whoever holds the only copy is
+the only one who can attest to it — and from Fabric's rule that only the owning org endorses writes
+to its implicit collection.
+
+**Why accepted:** Platform is already the operator of record, is party to every deal, and holds the
+only API identity. The concentration is one the architecture had before this change; endorsement
+makes it visible rather than creating it.
+
+**Upgrade path:** party-held copies (§2.2.1) — each party endorsing writes to its own collection.
+This restores independent endorsement and gives each member its own bytes, at the cost of every
+write needing all deal parties online to endorse. Nothing built so far has to be discarded to get
+there; the canonical read path does not change.
+
+**Raise this proactively** with any counterparty whose risk function asks who can attest to a
+record. It is a reasonable answer for a pilot and a poor one to be caught out by.
+
+---
+
+## 12. Decision log
+
+Every decision taken on this architecture, newest last. Entries here are **decided** — see §9 for
+what remains open.
+
+| # | Date | Decision | Where | Why |
+|---|---|---|---|---|
+| 1 | 25 Sep 2026 | **Channel = membership boundary, collection = deal boundary.** Channel public state holds index data only. | §2 | Role-scoped PDCs leak between competitors once a second lender or buyer joins (BR-10); a collection policy names orgs, not deals. |
+| 2 | 25 Sep 2026 | **Per-deal implicit collections**, not named pairwise collections. | §2.2, §2.5 | Named collections need a chaincode redeploy for every new member and grow combinatorially. |
+| 3 | 25 Sep 2026 | **Payloads travel as transient data**, never as chaincode arguments. | §2.2 | Arguments appear in the proposal every endorser and the orderer sees. |
+| 4 | 25 Sep 2026 | **No commercial data in chaincode event payloads, ever.** No free text either. | §3.2 | Events reach every channel member and are immutable — there is no retroactive fix. |
+| 5 | 25 Sep 2026 | **Every private payload carries a 128-bit CSPRNG salt**, one per item, generated client-side. | §3.3 | Fabric publishes the hash of every private value; a discount rate or round amount is otherwise brute-forceable. |
+| 6 | 25 Sep 2026 | **No application-level encryption** of channel state or collection payloads. At-rest encryption is infrastructure. | §3.4 | Members are entitled to the data; encrypting index data breaks Rule-02 and cross-chain correlation. |
+| 7 | 25 Sep 2026 | **Off-chain stores partitioned per org.** | §3.5 | Pooling off-chain recreates every on-chain leak somewhere easier to exfiltrate. |
+| 8 | 25 Sep 2026 | **Caller-party checks mandatory on every private read path.** | §4.1 | Collections control who holds data, not who may ask for it; implicit collections have no `memberOnlyRead`. |
+| 9 | 26 Sep 2026 | **Deferred from scope:** Reserved/CreditBacked funding (and `FundingManager.sol`), sanctions screening, post-shipment finance, dealer financing. | [NEW-PLAN.md](NEW-PLAN.md) | Deliberate scope reduction. Sanctions is flagged as the deferral carrying regulatory exposure. |
+| 10 | 26 Sep 2026 | **Identity model built on cryptogen material; Fabric CA deferred.** `wallet.ts` is the seam. | [NEW-PLAN.md](NEW-PLAN.md) Block 3 | CA enrollment replaces where identities come from without changing middleware, RBAC or the gateway. |
+| 11 | 27 Sep 2026 | **Platform-custodied canonical payload** — the payload lives in `_implicit_org_PlatformMSP` alone, not in every party's collection. | §2.2.1 | Writing to an org's implicit collection requires that org to endorse, and chaincode reads of org-specific collections are non-deterministic across endorsers. |
+| 12 | 27 Sep 2026 | **`blockToLive` is not configured** — it is unavailable on implicit collections, which never purge. Corrects decision 5's original wording. | §3.1 | Fabric: *"blockToLive is not available, meaning that private data is never automatically purged."* The NFR-05 trail is guaranteed, not configured. |
+| 13 | 27 Sep 2026 | **Endorsement policy is `OR('PlatformMSP.member')`** for every chaincode writing private data, and for `finance-cc` because it cross-invokes `trade-doc-cc`. | §3.6 | Found empirically in three steps: the gateway will not disclose transient data outside its own org; only the owning org endorses writes to its implicit collection; a Platform-only endorsement then failed to commit under majority-of-orgs. |
+| 14 | 1 Oct 2026 | **Accept single-org endorsement as a known limitation** rather than rebuild for party-held copies. | §11.1 | Platform is already the operator of record and party to every deal. Upgrade path recorded; nothing built is discarded by taking it later. |
+
+**Keep this current.** Any decision that changes data placement, endorsement, or what a non-party can
+see gets a row here on the same commit that implements it.
