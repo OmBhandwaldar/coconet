@@ -67,8 +67,8 @@ export interface ApprovalPrivate {
 export interface GateRequest<P> {
   txType: string;
   entityId: string;
+  /** Organisation whose threshold governs and whose users may sign. */
   orgId: string;
-  orgMsp: string;
   amount: number;
   /** Replayed verbatim to the checker. Omit for transitions with no payload. */
   proposed?: P;
@@ -142,16 +142,24 @@ function assertOrgMember(ctx: Context, orgMsp: string, what: string): void {
 }
 
 /**
- * The approving organisation's threshold for this transaction type, from
- * onboarding-cc. Fails closed: a lookup that cannot be completed aborts the
- * transition rather than letting it through on one signature. An unset
- * threshold is 0, which means every transaction of that type needs two
- * signatures — the safe reading of "above the configured threshold".
+ * The approving organisation's MSP and its threshold for this transaction type,
+ * in one cross-chaincode read of onboarding-cc.
+ *
+ * getOrganization returns the thresholds only to the organisation itself or the
+ * platform, so the absence of that field is itself the access decision: a
+ * caller who cannot see the threshold cannot run the gate, and the transition
+ * aborts. That is the same boundary Block 4 put around the risk tier, reused
+ * rather than re-stated.
+ *
+ * Fails closed throughout. An unset threshold is 0, which means every
+ * transaction of that type needs two signatures — the safe reading of "above
+ * the configured threshold", and the reading that makes a forgotten
+ * configuration loud instead of permissive.
  */
-async function thresholdFor(ctx: Context, orgId: string, txType: string): Promise<number> {
-  const res = await ctx.stub.invokeChaincode(
-    ONBOARDING_CC, ['getMakerCheckerThreshold', orgId, txType], CHANNEL,
-  );
+async function approvingOrg(
+  ctx: Context, orgId: string, txType: string,
+): Promise<{ orgMsp: string; threshold: number }> {
+  const res = await ctx.stub.invokeChaincode(ONBOARDING_CC, ['getOrganization', orgId], CHANNEL);
   if (res.status !== 200) {
     throw new Error(`Maker-checker threshold lookup for ${orgId}/${txType} failed: ${res.message}`);
   }
@@ -159,11 +167,24 @@ async function thresholdFor(ctx: Context, orgId: string, txType: string): Promis
   if (!body) {
     throw new Error(`Maker-checker threshold lookup for ${orgId}/${txType} returned nothing`);
   }
-  const { threshold } = JSON.parse(body) as { threshold?: number };
+  const org = JSON.parse(body) as {
+    msp_id?: string;
+    maker_checker_thresholds?: Record<string, number>;
+  };
+  if (!org.msp_id) {
+    throw new Error(`Organisation ${orgId} has no MSP — cannot determine who may approve ${txType}`);
+  }
+  if (!org.maker_checker_thresholds) {
+    throw new Error(
+      `${ctx.clientIdentity.getMSPID()} may not read ${orgId}'s maker-checker thresholds, ` +
+      `so it may not propose ${txType} on ${orgId}'s behalf`,
+    );
+  }
+  const threshold = org.maker_checker_thresholds[txType] ?? 0;
   if (typeof threshold !== 'number' || !Number.isFinite(threshold)) {
     throw new Error(`Maker-checker threshold for ${orgId}/${txType} is not a number: ${threshold}`);
   }
-  return threshold;
+  return { orgMsp: org.msp_id, threshold };
 }
 
 /**
@@ -199,16 +220,16 @@ export async function gate<P>(ctx: Context, req: GateRequest<P>): Promise<GateRe
     return { proceed: true, payload: priv.proposed as P | undefined, approval: existing };
   }
 
-  const threshold = await thresholdFor(ctx, req.orgId, req.txType);
+  const { orgMsp, threshold } = await approvingOrg(ctx, req.orgId, req.txType);
+  assertOrgMember(ctx, orgMsp, what);
   if (req.amount <= threshold) return { proceed: true, payload: req.proposed };
 
-  assertOrgMember(ctx, req.orgMsp, what);
   const now = txTimestamp(ctx);
   const index: ApprovalIndex = {
     tx_type: req.txType,
     entity_id: req.entityId,
     org_id: req.orgId,
-    org_msp: req.orgMsp,
+    org_msp: orgMsp,
     status: 'PendingApproval',
     maker_id: ctx.clientIdentity.getID(),
     maker_msp: ctx.clientIdentity.getMSPID(),
@@ -280,13 +301,25 @@ export async function read(ctx: Context, txType: string, entityId: string): Prom
 export async function listPending(ctx: Context, orgId?: string): Promise<string> {
   const caller = ctx.clientIdentity.getMSPID();
   const out: ApprovalIndex[] = [];
+  // Iterated by hand rather than for-await: fabric-shim's StateQueryIterator
+  // exposes next()/close() and has no async-iterator symbol, and it must be
+  // closed or the peer leaks the query.
   const iterator = await ctx.stub.getStateByPartialCompositeKey(APPROVAL, []);
-  for await (const res of iterator) {
-    const index = JSON.parse(res.value.toString()) as ApprovalIndex;
-    if (index.status !== 'PendingApproval') continue;
-    if (caller !== 'PlatformMSP' && index.org_msp !== caller) continue;
-    if (orgId && index.org_id !== orgId) continue;
-    out.push(index);
+  try {
+    let res = await iterator.next();
+    while (!res.done) {
+      const value = res.value?.value;
+      if (value && value.length > 0) {
+        const index = JSON.parse(Buffer.from(value).toString()) as ApprovalIndex;
+        const visible = caller === 'PlatformMSP' || index.org_msp === caller;
+        if (index.status === 'PendingApproval' && visible && (!orgId || index.org_id === orgId)) {
+          out.push(index);
+        }
+      }
+      res = await iterator.next();
+    }
+  } finally {
+    await iterator.close();
   }
   return JSON.stringify(out);
 }

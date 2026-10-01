@@ -1,6 +1,7 @@
 import * as chai from 'chai';
 import sinon from 'sinon';
 import { TradeDocChaincode } from './trade-doc.chaincode';
+import { approvalStub } from './approval-stub';
 
 const { expect } = chai;
 
@@ -19,6 +20,7 @@ const ALLOWED_KEYS = new Set([
   'doc_hash',                                // document fingerprint (already one-way)
   'changed_fields',                          // amendment field NAMES, never their values
   'failed_checks',                           // 3-way match check names, never the figures
+  'tx_type', 'entity_id', 'org_id',          // maker-checker: WHAT needs approving, never its value
 ]);
 
 function collectKeys(value: unknown, into: string[] = []): string[] {
@@ -33,10 +35,18 @@ function collectKeys(value: unknown, into: string[] = []): string[] {
   return into;
 }
 
-function makeCtx(state: Record<string, Buffer> = {}, opts: { msp?: string; transient?: unknown } = {}) {
+function makeCtx(
+  state: Record<string, Buffer> = {},
+  opts: {
+    msp?: string; transient?: unknown; user?: string;
+    thresholds?: Record<string, number>;
+    /** Shared when several identities must act on one ledger. */
+    priv?: Record<string, Buffer>;
+  } = {},
+) {
   // Private collections live in their own keyspace and are only readable by a
   // peer of the owning org — the mock keeps them separate for the same reason.
-  const priv: Record<string, Buffer> = {};
+  const priv: Record<string, Buffer> = opts.priv ?? {};
   const transientMap = new Map<string, Buffer>();
   if (opts.transient !== undefined) {
     transientMap.set('payload', Buffer.from(JSON.stringify(opts.transient)));
@@ -50,11 +60,20 @@ function makeCtx(state: Record<string, Buffer> = {}, opts: { msp?: string; trans
     getTransient: sinon.stub().returns(transientMap),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
+    // The maker-checker gate (BR-09) runs on every write path: composite keys
+    // for the approval ledger, a range query for the queue, and onboarding-cc
+    // for the approving org. Thresholds default high here — these suites are
+    // about the documents, not the signatures; maker-checker.test.ts is where
+    // the gate itself is exercised.
+    ...approvalStub(state, () => opts.msp ?? 'PlatformMSP', { thresholds: opts.thresholds }),
   };
-  const clientIdentity = { getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP') };
+  const clientIdentity = {
+      getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP'),
+      getID: sinon.stub().returns(opts.user ?? `x509::CN=${opts.msp ?? 'PlatformMSP'}-user`),
+    };
   const setTransient = (value: unknown) =>
     transientMap.set('payload', Buffer.from(JSON.stringify(value)));
-  return { stub, clientIdentity, __private: priv, __setTransient: setTransient } as any;
+  return { stub, clientIdentity, __private: priv, __state: state, __setTransient: setTransient } as any;
 }
 
 // Every setEvent call made on this ctx, decoded.
@@ -152,7 +171,9 @@ async function createGRN(ctx: any, grnId: string, poId: string, qty: number, doc
 /** Submit a PO the way the API does: index as args, figures as transient. */
 async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
   ctx.__setTransient({ ...poPrivateArgs(po), ...overrides });
-  return cc.createPO(ctx, poIndexArgs(po));
+  await cc.createPO(ctx, poIndexArgs(po));
+  // Issuing is its own event (POIssued), so the lifecycle sweep below covers it.
+  return cc.issuePO(ctx, po.po_id);
 }
 
 
@@ -203,6 +224,41 @@ describe('trade-doc-cc event payload contract', () => {
     expect(names, 'the match must actually fail for this guard to mean anything')
       .to.include('InvoiceMatchFailed');
     assertNoCommercialData(emitted(ctx));
+  });
+
+  // The gated path emits three further events, and whatever is under approval
+  // is by definition above a threshold — so these are the events most likely to
+  // be written with the amount attached "for convenience".
+  it('emits no commercial data when a transition is parked, approved or refused', async () => {
+    // Tata's thresholds, low enough that this order breaches them.
+    const state: Record<string, Buffer> = {};
+    const priv: Record<string, Buffer> = {};
+    const gated = { PO_ISSUE: 1000, GRN_ACCEPT: 1000, INVOICE_APPROVE: 1000 };
+    const buyer = (user: string) =>
+      makeCtx(state, { msp: 'BuyerMSP', user, thresholds: gated, priv });
+    const rajesh = buyer('id:rajesh');
+    const priya = buyer('id:priya');
+
+    rajesh.__setTransient(poPrivateArgs(po));
+    await cc.createPO(rajesh, poIndexArgs(po));
+    await cc.issuePO(rajesh, po.po_id);
+    expect(emitted(rajesh).map((e) => e.name),
+      'the gate must actually fire for this guard to mean anything')
+      .to.include('ApprovalRequested');
+
+    await cc.issuePO(priya, po.po_id);
+    expect(emitted(priya).map((e) => e.name)).to.include('ApprovalGranted');
+
+    // And the refusal path, whose reason is free text a human wrote.
+    const grn = buyer('id:rajesh');
+    grn.__setTransient({ received_qty: 9900, salt: TEST_SALT });
+    await cc.createGRN(grn, invoice.grn_id, po.po_id, 'grn-hash-0892');
+    await cc.acceptGRN(grn, invoice.grn_id);
+    const refuse = buyer('id:priya');
+    await cc.rejectApproval(refuse, 'GRN_ACCEPT', invoice.grn_id, 'short by 100 units, value 250000');
+    expect(emitted(refuse).map((e) => e.name)).to.include('ApprovalRejected');
+
+    assertNoCommercialData([...emitted(rajesh), ...emitted(priya), ...emitted(grn), ...emitted(refuse)]);
   });
 
   it('emits no commercial data when an invoice is rejected or disputed', async () => {

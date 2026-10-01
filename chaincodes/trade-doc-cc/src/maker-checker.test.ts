@@ -62,16 +62,26 @@ function makeOrg(thresholds: Record<string, number> = {}) {
         const rows = Object.entries(state)
           .filter(([k]) => k.startsWith(prefix))
           .map(([key, value]) => ({ key, value }));
-        return (async function* () { for (const r of rows) yield r; })();
+        let i = 0;
+        return {
+          next: async () => (i < rows.length ? { done: false, value: rows[i++] } : { done: true }),
+          close: async () => undefined,
+        };
       }),
-      // onboarding-cc's threshold lookup, cross-chaincode.
+      // onboarding-cc, cross-chaincode. The gate reads the approving org once
+      // for both its MSP and its thresholds; the thresholds come back only
+      // because the caller is entitled to them.
       invokeChaincode: sinon.stub().callsFake(async (_cc: string, args: string[]) => {
-        const [fn, orgId, txType] = args;
-        if (fn !== 'getMakerCheckerThreshold') return { status: 200, payload: Buffer.from('') };
+        const [fn, orgId] = args;
+        if (fn !== 'getOrganization') return { status: 200, payload: Buffer.from('') };
+        const entitled = msp === 'BuyerMSP' || msp === 'PlatformMSP';
         return {
           status: 200,
           payload: Buffer.from(JSON.stringify({
-            org_id: orgId, tx_type: txType, threshold: thresholds[txType] ?? 0,
+            org_id: orgId,
+            msp_id: 'BuyerMSP',
+            status: 'Approved',
+            ...(entitled ? { maker_checker_thresholds: thresholds } : {}),
           })),
         };
       }),
@@ -274,8 +284,10 @@ describe('maker-checker (BR-09, Rule-06)', () => {
     });
 
     it('will not let the supplier approve its own invoice', async () => {
+      // Refused before the threshold is even read: the supplier cannot see
+      // Tata's thresholds, so it cannot act on Tata's behalf.
       await expect(cc.approveInvoice(as(SURESH, 'SupplierMSP'), INV))
-        .to.be.rejectedWith(/may not approve/);
+        .to.be.rejectedWith(/may not/);
     });
   });
 

@@ -2,6 +2,7 @@ import * as chai from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { TradeDocChaincode } from './trade-doc.chaincode';
+import { approvalStub } from './approval-stub';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -24,8 +25,17 @@ function makeCtx(state: Record<string, Buffer> = {}, opts: { msp?: string; trans
     getTransient: sinon.stub().returns(transientMap),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
+    // The maker-checker gate (BR-09) runs on every write path: composite keys
+    // for the approval ledger, a range query for the queue, and onboarding-cc
+    // for the approving org. Thresholds default high here — these suites are
+    // about the documents, not the signatures; maker-checker.test.ts is where
+    // the gate itself is exercised.
+    ...approvalStub(state, () => opts.msp ?? 'PlatformMSP'),
   };
-  const clientIdentity = { getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP') };
+  const clientIdentity = {
+      getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP'),
+      getID: sinon.stub().returns(`x509::CN=${opts.msp ?? 'PlatformMSP'}-user`),
+    };
   const setTransient = (value: unknown) =>
     transientMap.set('payload', Buffer.from(JSON.stringify(value)));
   return { stub, clientIdentity, __private: priv, __setTransient: setTransient } as any;
@@ -107,9 +117,19 @@ async function createGRN(ctx: any, grnId: string, poId: string, qty: number, doc
 }
 
 /** Submit a PO the way the API does: index as args, figures as transient. */
-async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
+async function draftPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
   ctx.__setTransient({ ...poPrivateArgs(po), ...overrides });
   return cc.createPO(ctx, poIndexArgs(po));
+}
+
+/**
+ * Create and issue, which is what the API does when the order is below the
+ * buyer's PO_ISSUE threshold — one signature carries it. These suites keep that
+ * path; maker-checker.test.ts drives the two-signature one.
+ */
+async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
+  await draftPO(ctx, po, overrides);
+  return cc.issuePO(ctx, po.po_id);
 }
 
 
@@ -123,9 +143,13 @@ async function seedPoAndGrn(ctx: any) {
 describe('TradeDocChaincode', () => {
 
   describe('createPO', () => {
-    it('creates a PO directly in Issued status', async () => {
+    it('creates a PO in Draft — issuing is a separate, signed act', async () => {
       const ctx = makeCtx();
-      const po = JSON.parse(await createPO(ctx, validPO));
+      const draft = JSON.parse(await draftPO(ctx, validPO));
+      expect(draft.status).to.equal('Draft');
+      expect(draft.gross_value).to.equal(25000000);
+
+      const po = JSON.parse(await cc.issuePO(ctx, validPO.po_id));
       expect(po.status).to.equal('Issued');
       expect(po.po_id).to.equal('TM-PO-2024-0892');
       expect(po.gross_value).to.equal(25000000);
@@ -133,22 +157,22 @@ describe('TradeDocChaincode', () => {
 
     it('rejects duplicate po_id', async () => {
       const ctx = makeCtx({});
-      await createPO(ctx, validPO);
+      await draftPO(ctx, validPO);
       await expect(
-        createPO(ctx, { ...validPO, doc_hash: 'other' })
+        draftPO(ctx, { ...validPO, doc_hash: 'other' })
       ).to.be.rejectedWith(/already exists/);
     });
 
     it('rejects missing supplier_id', async () => {
       const ctx = makeCtx();
       const { supplier_id, ...noSupplier } = validPO;
-      await expect(createPO(ctx, noSupplier)).to.be.rejectedWith(/supplier_id is required/);
+      await expect(draftPO(ctx, noSupplier)).to.be.rejectedWith(/supplier_id is required/);
     });
 
     it('rejects non-positive gross_value', async () => {
       const ctx = makeCtx();
       await expect(
-        createPO(ctx, { ...validPO, gross_value: 0 })
+        draftPO(ctx, { ...validPO, gross_value: 0 })
       ).to.be.rejectedWith(/gross_value must be positive/);
     });
   });
