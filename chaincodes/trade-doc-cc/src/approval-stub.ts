@@ -27,7 +27,10 @@ export function approvalStub(
   callerMsp: () => string,
   opts: ApprovalStubOptions = {},
 ) {
-  const orgMsp = opts.orgMsp ?? 'BuyerMSP';
+  // Defaults to the caller's own org: the gate admits only the approving
+  // organisation's users, so a harness that is not about maker-checker needs
+  // its caller to BE that organisation.
+  const orgMsp = opts.orgMsp ?? callerMsp();
   const entitled = opts.entitledMsps ?? [orgMsp, 'PlatformMSP', 'SupplierMSP', 'LenderMSP'];
   const thresholds = opts.thresholds ?? {
     PO_ISSUE: UNGATED, GRN_ACCEPT: UNGATED, INVOICE_APPROVE: UNGATED, FINANCE_APPROVE: UNGATED,

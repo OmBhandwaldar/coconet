@@ -1,5 +1,5 @@
 import { Context, Contract, Info, Returns, Transaction } from 'fabric-contract-api';
-import { gate, listPending, pendingResponse, read as readApproval, reject } from './maker-checker';
+import { gate, listPending, pendingFor, pendingResponse, read as readApproval, reject } from './maker-checker';
 
 // Same channel as trade-doc-cc; cross-chaincode calls stay in-channel.
 const CHANNEL = 'buyer-supplier-channel';
@@ -242,7 +242,13 @@ export class FinanceChaincode extends Contract {
     if (fr.status !== 'Offered') throw new Error(`Cannot approve a request in status ${fr.status}`);
     if (!fr.lender_id) throw new Error(`Finance request ${requestId} has no lender to approve it`);
 
-    const proposed = this.proposedAmount(ctx);
+    // A maker must state the figure; a checker must not have to. Which call
+    // this is decides whether the transient payload is required, so the pending
+    // record is read first — demanding a payload up front would reject the
+    // second signature, and defaulting the amount to zero would let an empty
+    // body through the gate as a sub-threshold approval of nothing.
+    const pending = await pendingFor(ctx, 'FINANCE_APPROVE', requestId);
+    const proposed = pending ? 0 : this.requireProposedAmount(ctx);
     const decision = await gate<{ approved_amount: number }>(ctx, {
       txType: 'FINANCE_APPROVE',
       entityId: requestId,
@@ -382,16 +388,9 @@ export class FinanceChaincode extends Contract {
   // ─── Helpers ──────────────────────────────────────────────────────────────
   private readonly PRIVATE_COLLECTION = '_implicit_org_PlatformMSP';
 
-  /**
-   * The amount a maker is proposing. Absent on the checker's call, which
-   * carries no transient data — the figure under approval comes from storage,
-   * so zero is the right answer there: it is at or below every threshold and
-   * the gate has already resolved to the pending record by then.
-   */
-  private proposedAmount(ctx: Context): number {
-    const raw = ctx.stub.getTransient()?.get('payload');
-    if (!raw || raw.length === 0) return 0;
-    const { approved_amount } = JSON.parse(Buffer.from(raw).toString()) as Partial<FinancePrivate>;
+  /** The figure a maker is proposing. Required — only a checker may omit it. */
+  private requireProposedAmount(ctx: Context): number {
+    const { approved_amount } = this.transientPayload<Partial<FinancePrivate>>(ctx);
     const amount = Number(approved_amount);
     if (!Number.isFinite(amount) || amount <= 0) {
       throw new Error(`Invalid approved amount: ${approved_amount}`);

@@ -331,6 +331,13 @@ export class TradeDocChaincode extends Contract {
     if (!grnId) throw new Error('grn_id is required');
     const priv = this.transientPayload<Partial<GRNPrivate>>(ctx);
     const index = await this.getPOIndex(ctx, poId); // validates the PO exists
+    // A draft order has not been issued, so nothing was ordered and nothing can
+    // have been delivered against it. Without this check the PO_ISSUE gate is
+    // skippable end to end: GRN → invoice → 3-way match → approve → escrow all
+    // run on an order no checker ever signed.
+    if (index.status === 'Draft') {
+      throw new Error(`Purchase order ${poId} has not been issued — a draft cannot receive goods`);
+    }
     this.assertParty(ctx, index.party_msps, `GRN ${grnId}`);
 
     if (await this.exists(ctx, this.grnKey(grnId))) {

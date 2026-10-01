@@ -79,7 +79,12 @@ describe('a completed transition answers 200', () => {
 });
 
 describe('the checker\'s call carries no figure', () => {
-  it('approves financing with an empty body', async () => {
+  // This asserts the WIRING only — that an empty body reaches the chaincode
+  // with no transient payload. Whether an empty body is ACCEPTED is the
+  // chaincode's rule and is tested there: a maker must state a figure, and
+  // only a checker may omit one. Fabric is mocked here, so this test cannot
+  // and does not speak to that.
+  it('sends no transient payload when the body carries no amount', async () => {
     const invoke = vi.spyOn(fabricService, 'invoke').mockResolvedValue(APPROVED_PO);
     const withTransient = vi.spyOn(fabricService, 'invokeWithTransient').mockResolvedValue(APPROVED_PO);
 

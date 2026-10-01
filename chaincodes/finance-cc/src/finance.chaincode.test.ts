@@ -13,7 +13,7 @@ function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unkno
   // The maker-checker gate (BR-09) reads onboarding-cc for the approving org on
   // every gated write. Thresholds default high here — these suites are about
   // the financing rules, not the signatures; maker-checker.test.ts drives those.
-  const approvals = approvalStub(state, () => 'PlatformMSP', { orgMsp: 'LenderMSP' });
+  const approvals = approvalStub(state, () => 'PlatformMSP');
   const invokeChaincode = sinon.stub().callsFake(async (ccName: string, args: string[]) => {
     if (ccName === 'onboarding-cc') return approvals.invokeChaincode(ccName, args);
     const fn = args[0];

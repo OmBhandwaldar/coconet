@@ -23,6 +23,7 @@ const { expect } = chai;
 const RAJESH = 'x509::CN=User1@buyer.coconet.local::CN=ca.buyer.coconet.local';
 const PRIYA  = 'x509::CN=User2@buyer.coconet.local::CN=ca.buyer.coconet.local';
 const SURESH = 'x509::CN=User1@supplier.coconet.local::CN=ca.supplier.coconet.local';
+const PLATFORM = 'x509::CN=Admin@platform.coconet.local::CN=ca.platform.coconet.local';
 
 const THRESHOLD = 1000000;
 const PARTY_MSPS = ['BuyerMSP', 'SupplierMSP', 'PlatformMSP'];
@@ -288,6 +289,61 @@ describe('maker-checker (BR-09, Rule-06)', () => {
       // Tata's thresholds, so it cannot act on Tata's behalf.
       await expect(cc.approveInvoice(as(SURESH, 'SupplierMSP'), INV))
         .to.be.rejectedWith(/may not/);
+    });
+  });
+
+  // ─── What a code review found, after the first pass passed ─────────────────
+  // Each of these was a real hole in the gate as first written.
+  describe('holes the first implementation left', () => {
+    it('refuses the platform as a checker for a buyer\'s decision', async () => {
+      // PlatformMSP is admitted by every other access check in this chaincode,
+      // because it custodies the data and endorses every transaction. A second
+      // signature is different in kind: the control exists so two people inside
+      // Tata agree, and the platform operator is not one of them.
+      const as = makeOrg(ALL_GATES);
+      await draftPO(as(RAJESH));
+      await cc.issuePO(as(RAJESH), PO);
+      await expect(cc.issuePO(as(PLATFORM, 'PlatformMSP'), PO)).to.be.rejectedWith(/may not approve/);
+
+      expect(JSON.parse(await cc.getPurchaseOrder(as(RAJESH), PO)).status).to.equal('Draft');
+    });
+
+    it('will not let a draft PO receive goods — the gate must not be skippable', async () => {
+      // createGRN only checked that the PO existed. Since a PO is now born in
+      // Draft, that left GRN → invoice → match → approve → escrow all runnable
+      // against an order no checker had signed.
+      const as = makeOrg(ALL_GATES);
+      await draftPO(as(RAJESH));
+
+      const grn = as(RAJESH);
+      grn.__setTransient({ received_qty: 10000, salt: SALT });
+      await expect(cc.createGRN(grn, GRN, PO, 'grn-hash')).to.be.rejectedWith(/has not been issued/);
+    });
+
+    it('does not overwrite a refusal with a fresh proposal', async () => {
+      // The Rejected record is the only place the refusal and its reason exist.
+      const as = makeOrg(ALL_GATES);
+      await draftPO(as(RAJESH));
+      await cc.issuePO(as(RAJESH), PO);
+      await cc.rejectApproval(as(PRIYA), 'PO_ISSUE', PO, 'Budget not released');
+
+      await expect(cc.issuePO(as(RAJESH), PO)).to.be.rejectedWith(/was refused by/);
+      const approval = JSON.parse(await cc.getApproval(as(RAJESH), 'PO_ISSUE', PO));
+      expect(approval.status).to.equal('Rejected');
+      expect(approval.reason).to.equal('Budget not released');
+      expect(approval.checker_id).to.equal(PRIYA);
+    });
+
+    it('does not let an approved cycle be re-run', async () => {
+      const as = makeOrg(ALL_GATES);
+      await draftPO(as(RAJESH));
+      await cc.issuePO(as(RAJESH), PO);
+      await cc.issuePO(as(PRIYA), PO);
+
+      // The PO's own state machine catches this first; the gate is the backstop
+      // for transitions that leave the entity where it was, as financing does.
+      await expect(cc.issuePO(as(RAJESH), PO)).to.be.rejected;
+      expect(JSON.parse(await cc.getApproval(as(RAJESH), 'PO_ISSUE', PO)).status).to.equal('Approved');
     });
   });
 

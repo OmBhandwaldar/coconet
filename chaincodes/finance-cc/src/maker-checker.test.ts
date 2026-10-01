@@ -166,6 +166,51 @@ describe('maker-checker on financing approval (BR-09)', () => {
     });
   });
 
+  // ─── What a code review found, after the first pass passed ─────────────────
+  describe('holes the first implementation left', () => {
+    it('refuses an empty body from a maker rather than approving zero', async () => {
+      // proposedAmount() returned 0 for an absent transient so the checker
+      // would not have to send one. With approved_amount optional at the API,
+      // an empty body then slipped through the gate as 0 <= threshold and
+      // persisted a facility of nothing, plus a FinanceApproved event.
+      const as = makeDesk({ FINANCE_APPROVE: 5000000 });
+      await seedToOffered(as);
+
+      const ctx = as(AMIT);
+      ctx.__setTransient({});
+      await expect(cc.approveFinancing(ctx, FR)).to.be.rejectedWith(/Invalid approved amount/);
+
+      const fr = JSON.parse(await cc.getFinanceRequest(as(AMIT), FR));
+      expect(fr.approved_amount).to.equal(undefined);
+    });
+
+    it('will not let one user replay the approval and reset the agreed figure', async () => {
+      // approveFinancing leaves the request at Offered, so unlike every other
+      // gated transition its own state machine does not reject a replay. The
+      // gate is the only thing standing between a lender and quietly rewriting
+      // an approved facility to a sub-threshold amount on one signature.
+      const as = makeDesk({ FINANCE_APPROVE: 5000000 });
+      await seedToOffered(as);
+      await propose(as(AMIT), APPROVED);
+      await cc.approveFinancing(as(NANDITA), FR);
+
+      await expect(propose(as(AMIT), 1000)).to.be.rejectedWith(/already been approved/);
+      const fr = JSON.parse(await cc.getFinanceRequest(as(AMIT), FR));
+      expect(fr.approved_amount).to.equal(APPROVED);
+    });
+
+    it('preserves a refusal against a re-proposal', async () => {
+      const as = makeDesk({ FINANCE_APPROVE: 5000000 });
+      await seedToOffered(as);
+      await propose(as(AMIT), APPROVED);
+      await cc.rejectApproval(as(NANDITA), 'FINANCE_APPROVE', FR, 'Buyer concentration limit');
+
+      await expect(propose(as(AMIT), 20000000)).to.be.rejectedWith(/was refused by/);
+      const approval = JSON.parse(await cc.getApproval(as(AMIT), 'FINANCE_APPROVE', FR));
+      expect(approval.reason).to.equal('Buyer concentration limit');
+    });
+  });
+
   describe('below the threshold', () => {
     it('approves on one signature', async () => {
       const as = makeDesk({ FINANCE_APPROVE: 50000000 });

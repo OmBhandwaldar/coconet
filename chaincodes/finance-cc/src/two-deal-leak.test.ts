@@ -38,7 +38,7 @@ function makeNetwork() {
       getTransient: sinon.stub().returns(transientMap),
       setEvent: sinon.stub(),
       getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
-      ...approvalStub(state, () => msp, { orgMsp: 'LenderMSP' }),
+      ...approvalStub(state, () => msp),
     };
     return {
       stub,

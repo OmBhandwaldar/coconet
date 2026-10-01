@@ -134,9 +134,20 @@ async function write(
   }
 }
 
+/**
+ * Only the approving organisation's own users may sign. The platform is NOT
+ * admitted here, unlike every other access check in these chaincodes.
+ *
+ * Elsewhere PlatformMSP is allowed through because it custodies the data and
+ * endorses every transaction (PRIVACY-DESIGN.md §11.1). A second signature is
+ * different in kind: the control exists so that two people inside the buyer or
+ * the lender agree, and letting the platform operator countersign a buyer's
+ * ₹2.5cr order would make the control mean nothing it claims to mean. The
+ * platform signs only where the platform is itself the approving org.
+ */
 function assertOrgMember(ctx: Context, orgMsp: string, what: string): void {
   const caller = ctx.clientIdentity.getMSPID();
-  if (caller !== orgMsp && caller !== 'PlatformMSP') {
+  if (caller !== orgMsp) {
     throw new Error(`${caller} may not approve ${what} — that is ${orgMsp}'s decision`);
   }
 }
@@ -197,6 +208,21 @@ export async function gate<P>(ctx: Context, req: GateRequest<P>): Promise<GateRe
   const key = approvalKey(ctx, req.txType, req.entityId);
   const existing = await readIndex(ctx, key);
 
+  // A completed cycle is not a new one. Normally the entity's own state machine
+  // rejects the replay before the gate is reached — but approveFinancing leaves
+  // the request at Offered, so without this a second call would fall through to
+  // the threshold branch, overwrite the Approved record and reset the agreed
+  // figure. A Rejected record must not be overwritten either: it is the only
+  // place the refusal and its reason exist (NFR-05).
+  if (existing && existing.status === 'Approved') {
+    throw new Error(`${what} has already been approved by ${existing.checker_id}`);
+  }
+  if (existing && existing.status === 'Rejected') {
+    throw new Error(
+      `${what} was refused by ${existing.checker_id} — raise a new one rather than re-proposing this`,
+    );
+  }
+
   if (existing && existing.status === 'PendingApproval') {
     assertOrgMember(ctx, existing.org_msp, what);
     const checker = ctx.clientIdentity.getID();
@@ -251,6 +277,20 @@ export async function gate<P>(ctx: Context, req: GateRequest<P>): Promise<GateRe
   return { proceed: false, approval: index };
 }
 
+/**
+ * The pending record for a transition, if there is one.
+ *
+ * A caller needs this to tell a maker's call from a checker's BEFORE reading
+ * transient data — the checker sends none, so demanding a payload up front
+ * would reject the second signature.
+ */
+export async function pendingFor(
+  ctx: Context, txType: string, entityId: string,
+): Promise<ApprovalIndex | null> {
+  const index = await readIndex(ctx, approvalKey(ctx, txType, entityId));
+  return index && index.status === 'PendingApproval' ? index : null;
+}
+
 /** A checker declines. The entity does not move; the record says who refused. */
 export async function reject(
   ctx: Context, txType: string, entityId: string, reason: string,
@@ -269,7 +309,10 @@ export async function reject(
     throw new Error(`${what} was proposed by this identity — a checker must be a different user (BR-09)`);
   }
 
-  const priv = (await readPrivate(ctx, key)) ?? { amount: 0, threshold: 0, salt: ctx.stub.getTxID() };
+  // Not defaulted: readPrivate() swallows a failed read, so a fallback of zeros
+  // would write zeros over the real amount and threshold and call it a refusal.
+  const priv = await readPrivate(ctx, key);
+  if (!priv) throw new Error(`Proposed payload for ${what} is not readable on this peer`);
   priv.reason = reason;
   index.status = 'Rejected';
   index.checker_id = checker;
