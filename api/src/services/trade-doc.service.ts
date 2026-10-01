@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
-import { invoke, query } from '../fabric/fabric.service.js';
+import { invoke, invokeWithTransient, query } from '../fabric/fabric.service.js';
+import { newSalt, partyMsps } from '../fabric/private-data.js';
 import type { CreatePOInput, SubmitInvoiceInput } from '../validators/trade-doc.validator.ts';
 
 export type POStatus =
@@ -65,8 +66,26 @@ export interface Invoice {
 const cc = env.FABRIC_CHAINCODE_TRADE_DOC;
 
 // ─── Purchase Orders ──────────────────────────────────────────────────────────
+/**
+ * Splits the request the way PRIVACY-DESIGN.md §2.1 requires: identifiers,
+ * parties and the document hash go on the channel as arguments; every
+ * commercial figure goes to the private collection as transient data, carrying
+ * a fresh salt so the public hash of a round figure is not brute-forceable.
+ */
 export async function createPO(input: CreatePOInput): Promise<PurchaseOrder> {
-  return invoke<PurchaseOrder>(cc, 'createPO', JSON.stringify(input));
+  const {
+    po_id, buyer_id, supplier_id, doc_hash,
+    currency, gross_value, item_description, quantity, price_per_unit,
+    delivery_terms, payment_terms,
+  } = input as CreatePOInput & Record<string, unknown>;
+
+  const party_msps = await partyMsps(buyer_id, supplier_id);
+  const index = { po_id, buyer_id, supplier_id, party_msps, doc_hash };
+  const payload = {
+    currency, gross_value, item_description, quantity, price_per_unit,
+    delivery_terms, payment_terms, salt: newSalt(),
+  };
+  return invokeWithTransient<PurchaseOrder>(cc, 'createPO', [JSON.stringify(index)], payload);
 }
 export async function getPurchaseOrder(poId: string): Promise<PurchaseOrder> {
   return query<PurchaseOrder>(cc, 'getPurchaseOrder', poId);
@@ -86,7 +105,11 @@ export async function fulfillPO(poId: string): Promise<PurchaseOrder> {
 
 // ─── Goods Receipt ──────────────────────────────────────────────────────────
 export async function createGRN(grnId: string, poId: string, receivedQty: number, docHash?: string): Promise<GoodsReceipt> {
-  return invoke<GoodsReceipt>(cc, 'createGRN', grnId, poId, String(receivedQty), docHash ?? '');
+  // Received quantity is a commercial figure: transient, with its own salt.
+  return invokeWithTransient<GoodsReceipt>(
+    cc, 'createGRN', [grnId, poId, docHash ?? ''],
+    { received_qty: receivedQty, salt: newSalt() },
+  );
 }
 export async function acceptGRN(grnId: string): Promise<GoodsReceipt> {
   return invoke<GoodsReceipt>(cc, 'acceptGRN', grnId);
@@ -97,13 +120,23 @@ export async function getGRN(grnId: string): Promise<GoodsReceipt> {
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 export async function submitInvoice(input: SubmitInvoiceInput): Promise<Invoice> {
-  return invoke<Invoice>(cc, 'submitInvoice', JSON.stringify(input));
+  const {
+    invoice_id, supplier_id, buyer_id, po_id, grn_id, doc_hash,
+    amount, quantity, currency, due_date,
+  } = input as SubmitInvoiceInput & Record<string, unknown>;
+
+  const index = { invoice_id, supplier_id, buyer_id, po_id, grn_id, doc_hash };
+  const payload = { amount, quantity, currency: currency ?? 'INR', due_date, salt: newSalt() };
+  return invokeWithTransient<Invoice>(cc, 'submitInvoice', [JSON.stringify(index)], payload);
 }
 export async function runThreeWayMatch(invoiceId: string): Promise<Invoice> {
   return invoke<Invoice>(cc, 'runThreeWayMatch', invoiceId);
 }
 export async function reviseInvoice(invoiceId: string, amount: number, quantity: number, docHash?: string): Promise<Invoice> {
-  return invoke<Invoice>(cc, 'reviseInvoice', invoiceId, String(amount), String(quantity), docHash ?? '');
+  return invokeWithTransient<Invoice>(
+    cc, 'reviseInvoice', [invoiceId, docHash ?? ''],
+    { amount, quantity, salt: newSalt() },
+  );
 }
 export async function getInvoice(invoiceId: string): Promise<Invoice> {
   return query<Invoice>(cc, 'getInvoice', invoiceId);

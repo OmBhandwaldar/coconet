@@ -1,5 +1,6 @@
 import { env } from '../config/env.js';
-import { invoke, query } from '../fabric/fabric.service.js';
+import { mspForOrg, newSalt, partyMsps } from '../fabric/private-data.js';
+import { invoke, invokeWithTransient, query } from '../fabric/fabric.service.js';
 import { getInvoice } from './trade-doc.service.js';
 
 export type ProductType = 'PreShipment' | 'InvoiceDiscounting';
@@ -55,16 +56,22 @@ export interface PreShipmentInput {
   request_id: string; po_id: string; requestor_org_id: string; requested_amount: number; lender_id?: string;
 }
 export async function createPreShipment(input: PreShipmentInput): Promise<FinanceRequest> {
-  const payload = {
+  const index = {
     request_id: input.request_id,
     product_type: 'PreShipment' as const,
     asset_type: 'PO' as const,
     asset_id: input.po_id,
     requestor_org_id: input.requestor_org_id,
-    requested_amount: input.requested_amount,
     lender_id: input.lender_id,
+    // Assignment adds the lender to the invoice's party set, so the chaincode
+    // needs its MSP — otherwise the lender owns a receivable it cannot read.
+    lender_msp: input.lender_id ? await mspForOrg(input.lender_id) : undefined,
+    party_msps: await partyMsps(input.requestor_org_id, input.lender_id),
   };
-  return invoke<FinanceRequest>(cc, 'createFinanceRequest', JSON.stringify(payload));
+  // The amount never enters the proposal — financing terms are the most
+  // sensitive data on the platform (PRIVACY-DESIGN.md §1.1).
+  const payload = { requested_amount: input.requested_amount, salt: newSalt() };
+  return invokeWithTransient<FinanceRequest>(cc, 'createFinanceRequest', [JSON.stringify(index)], payload);
 }
 
 export interface InvoiceDiscountingInput {
@@ -72,17 +79,22 @@ export interface InvoiceDiscountingInput {
   lender_id: string; discount_rate: number;
 }
 export async function createInvoiceDiscounting(input: InvoiceDiscountingInput): Promise<FinanceRequest> {
-  const payload = {
+  const index = {
     request_id: input.request_id,
     product_type: 'InvoiceDiscounting' as const,
     asset_type: 'Invoice' as const,
     asset_id: input.invoice_id,
     requestor_org_id: input.requestor_org_id,
-    requested_amount: input.requested_amount,
     lender_id: input.lender_id,
-    discount_rate: input.discount_rate,
+    lender_msp: input.lender_id ? await mspForOrg(input.lender_id) : undefined,
+    party_msps: await partyMsps(input.requestor_org_id, input.lender_id),
   };
-  return invoke<FinanceRequest>(cc, 'createFinanceRequest', JSON.stringify(payload));
+  const payload = {
+    requested_amount: input.requested_amount,
+    discount_rate: input.discount_rate,
+    salt: newSalt(),
+  };
+  return invokeWithTransient<FinanceRequest>(cc, 'createFinanceRequest', [JSON.stringify(index)], payload);
 }
 
 // ─── Lifecycle ────────────────────────────────────────────────────────────────
@@ -93,19 +105,25 @@ export async function validateEligibility(requestId: string): Promise<FinanceReq
   return invoke<FinanceRequest>(cc, 'validateEligibility', requestId);
 }
 export async function submitQuote(requestId: string, quote: Quote): Promise<FinanceRequest> {
-  return invoke<FinanceRequest>(cc, 'submitQuote', requestId, JSON.stringify(quote));
+  // Advance rate, discount rate, interest and tenor — the lender's pricing.
+  return invokeWithTransient<FinanceRequest>(cc, 'submitQuote', [requestId], { ...quote, salt: newSalt() });
 }
 export async function approveFinancing(requestId: string, approvedAmount: number): Promise<FinanceRequest> {
-  return invoke<FinanceRequest>(cc, 'approveFinancing', requestId, String(approvedAmount));
+  return invokeWithTransient<FinanceRequest>(cc, 'approveFinancing', [requestId], { approved_amount: approvedAmount });
 }
 export async function acceptOffer(requestId: string): Promise<FinanceRequest> {
   return invoke<FinanceRequest>(cc, 'acceptOffer', requestId);
 }
 export async function disburseFunds(requestId: string, disbursementRef: string, netAmount?: number): Promise<FinanceRequest> {
-  return invoke<FinanceRequest>(cc, 'disburseFunds', requestId, disbursementRef, netAmount === undefined ? '' : String(netAmount));
+  // The bank reference stays public — it is how a payment is traced; the net
+  // figure does not.
+  return invokeWithTransient<FinanceRequest>(
+    cc, 'disburseFunds', [requestId, disbursementRef],
+    netAmount === undefined ? {} : { net_disbursed: netAmount },
+  );
 }
 export async function recordRepayment(requestId: string, amount: number, paymentRef: string): Promise<FinanceRequest> {
-  return invoke<FinanceRequest>(cc, 'recordRepayment', requestId, String(amount), paymentRef);
+  return invokeWithTransient<FinanceRequest>(cc, 'recordRepayment', [requestId, paymentRef], { repayment_amount: amount });
 }
 
 // ─── Net settlement (service layer, per MVP-PLAN Block 4) ──────────────────────

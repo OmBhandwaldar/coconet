@@ -43,7 +43,12 @@ const fakeInvoice = {
 
 beforeEach(() => {
   vi.spyOn(fabricService, 'invoke').mockResolvedValue(fakePO);
-  vi.spyOn(fabricService, 'query').mockResolvedValue(fakePO);
+  vi.spyOn(fabricService, 'invokeWithTransient').mockResolvedValue(fakePO);
+  // createPO resolves the deal's party MSPs from onboarding-cc before it
+  // submits, so the query mock has to answer that too.
+  vi.spyOn(fabricService, 'query').mockImplementation(async (_cc: string, fn: string) =>
+    (fn === 'getOrganization' ? { msp_id: 'BuyerMSP' } : fakePO) as never,
+  );
 });
 afterEach(() => { vi.restoreAllMocks(); });
 
@@ -54,7 +59,20 @@ describe('POST /api/trade-docs/purchase-orders', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.po_id).toBe('TM-PO-2024-0892');
     expect(res.body.correlationId).toBeTruthy();
-    expect(fabricService.invoke).toHaveBeenCalledWith('trade-doc-cc', 'createPO', JSON.stringify(validPO));
+    // The split is the point: identifiers and parties as arguments, every
+    // commercial figure as transient, with a fresh salt (PRIVACY-DESIGN §2.1, §3.3).
+    const [cc, fn, args, transient] = (fabricService.invokeWithTransient as any).mock.calls[0];
+    expect(cc).toBe('trade-doc-cc');
+    expect(fn).toBe('createPO');
+
+    const index = JSON.parse(args[0]);
+    expect(index.po_id).toBe(validPO.po_id);
+    expect(index.party_msps).toContain('PlatformMSP');
+    expect(index).not.toHaveProperty('gross_value');
+    expect(index).not.toHaveProperty('price_per_unit');
+
+    expect(transient.gross_value).toBe(25000000);
+    expect(transient.salt).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('rejects a non-positive gross_value with 400', async () => {
@@ -94,7 +112,12 @@ describe('GRN routes', () => {
       .post('/api/trade-docs/grn')
       .send({ grn_id: 'TM-GRN-2024-0892', po_id: 'TM-PO-2024-0892', received_qty: 10000 });
     expect(res.status).toBe(201);
-    expect(fabricService.invoke).toHaveBeenCalledWith('trade-doc-cc', 'createGRN', 'TM-GRN-2024-0892', 'TM-PO-2024-0892', '10000', '');
+    // Received quantity is a figure, so it travels as transient, not an argument.
+    const [, fn, args, transient] = (fabricService.invokeWithTransient as any).mock.calls[0];
+    expect(fn).toBe('createGRN');
+    expect(args).toEqual(['TM-GRN-2024-0892', 'TM-PO-2024-0892', '']);
+    expect(transient.received_qty).toBe(10000);
+    expect(transient.salt).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('accepts a GRN', async () => {
@@ -109,7 +132,14 @@ describe('Invoice routes', () => {
     vi.spyOn(fabricService, 'invoke').mockResolvedValue(fakeInvoice);
     const res = await request.post('/api/trade-docs/invoices').send(validInvoice);
     expect(res.status).toBe(201);
-    expect(fabricService.invoke).toHaveBeenCalledWith('trade-doc-cc', 'submitInvoice', JSON.stringify(validInvoice));
+    const [, fn, args, transient] = (fabricService.invokeWithTransient as any).mock.calls[0];
+    expect(fn).toBe('submitInvoice');
+    const index = JSON.parse(args[0]);
+    expect(index.invoice_id).toBe(validInvoice.invoice_id);
+    expect(index).not.toHaveProperty('amount');
+    expect(index).not.toHaveProperty('quantity');
+    expect(transient.amount).toBe(validInvoice.amount);
+    expect(transient.salt).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('rejects an invoice missing doc_hash with 400', async () => {

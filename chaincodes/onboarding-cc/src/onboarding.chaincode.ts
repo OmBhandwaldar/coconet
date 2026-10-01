@@ -34,16 +34,29 @@ export interface Organization {
   status: OrgStatus;
   roles: string[];
   kyb_verified: boolean;
-  risk_tier?: RiskTier;
-
-  // Maker-checker thresholds — per transaction type, amount above which a
-  // checker signature is required. Enforcement engine arrives in Ring 11
-  // (Rule-06); this field just stores the configuration on chain.
-  maker_checker_thresholds: Record<string, number>;
 
   created_at: string;
   updated_at: string;
 }
+
+// ─── Private organisation data (PRIVACY-DESIGN.md §2.1) ──────────────────────
+// Two fields are not network-wide facts. The risk tier is the platform's credit
+// judgement of a member, and the maker-checker threshold is the amount that
+// member approves on a single signature — published, it tells every counterparty
+// how large a transaction it waves through unchecked.
+//
+// Block 1 removed both from event payloads for that reason; leaving them in
+// channel state would simply move the leak, since any member's peer can read
+// public state directly. Redacting them in the API is not a boundary.
+export interface OrganizationPrivate {
+  risk_tier?: RiskTier;
+  // Per transaction type, the amount above which a checker signature is
+  // required. Enforcement arrives in Block 5 (Rule-06).
+  maker_checker_thresholds: Record<string, number>;
+  salt: string;
+}
+
+export type OrganizationView = Organization & Partial<OrganizationPrivate>;
 
 const ORG_TYPES: OrgType[] = ['Buyer', 'Supplier', 'Lender', 'Platform', 'Auditor'];
 const RISK_TIERS: RiskTier[] = ['Prime', 'Standard', 'High-touch'];
@@ -112,12 +125,13 @@ export class OnboardingChaincode extends Contract {
       status: 'Pending',
       roles: input.roles ?? [],
       kyb_verified: false,
-      maker_checker_thresholds: {},
+
       created_at: now,
       updated_at: now,
     };
 
     await ctx.stub.putState(this.orgKey(input.org_id), Buffer.from(JSON.stringify(org)));
+    await this.putOrgPrivate(ctx, input.org_id, { maker_checker_thresholds: {}, salt: this.newSalt(ctx) });
     ctx.stub.setEvent('OrganizationCreated', Buffer.from(JSON.stringify({
       org_id: org.org_id,
       org_type: org.org_type,
@@ -175,13 +189,15 @@ export class OnboardingChaincode extends Contract {
       throw new Error(`Invalid risk_tier: ${tier}. Must be one of ${RISK_TIERS.join(', ')}`);
     }
 
-    org.risk_tier = tier as RiskTier;
+    const priv = (await this.getOrgPrivate(ctx, orgId)) ?? { maker_checker_thresholds: {}, salt: this.newSalt(ctx) };
+    priv.risk_tier = tier as RiskTier;
+    await this.putOrgPrivate(ctx, orgId, priv);
     org.updated_at = this.txTimestamp(ctx);
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
     ctx.stub.setEvent('RiskTierAssigned', Buffer.from(JSON.stringify({ org_id: orgId, status: org.status })));
 
-    return JSON.stringify(org);
+    return JSON.stringify({ ...org, ...priv });
   }
 
   // ─── BR-09 / Rule-06: Maker-checker thresholds (storage only — Ring 11 enforces) ──
@@ -202,7 +218,9 @@ export class OnboardingChaincode extends Contract {
       throw new Error(`Invalid threshold: ${threshold}. Must be a non-negative number.`);
     }
 
-    org.maker_checker_thresholds[txType] = amount;
+    const priv = (await this.getOrgPrivate(ctx, orgId)) ?? { maker_checker_thresholds: {}, salt: this.newSalt(ctx) };
+    priv.maker_checker_thresholds[txType] = amount;
+    await this.putOrgPrivate(ctx, orgId, priv);
     org.updated_at = this.txTimestamp(ctx);
 
     await ctx.stub.putState(this.orgKey(orgId), Buffer.from(JSON.stringify(org)));
@@ -211,14 +229,18 @@ export class OnboardingChaincode extends Contract {
       Buffer.from(JSON.stringify({ org_id: orgId, tx_type: txType })),
     );
 
-    return JSON.stringify(org);
+    return JSON.stringify({ ...org, ...priv });
   }
 
   @Transaction(false)
   @Returns('string')
   async getMakerCheckerThreshold(ctx: Context, orgId: string, txType: string): Promise<string> {
     const org = await this.getOrg(ctx, orgId);
-    const threshold = org.maker_checker_thresholds[txType] ?? 0;
+    if (!this.maySeeOrgPrivate(ctx, org)) {
+      throw new Error(`${ctx.clientIdentity.getMSPID()} may not read ${orgId}'s maker-checker thresholds`);
+    }
+    const priv = await this.getOrgPrivate(ctx, orgId);
+    const threshold = priv?.maker_checker_thresholds[txType] ?? 0;
     return JSON.stringify({ org_id: orgId, tx_type: txType, threshold });
   }
 
@@ -226,10 +248,46 @@ export class OnboardingChaincode extends Contract {
   @Transaction(false)
   @Returns('string')
   async getOrganization(ctx: Context, orgId: string): Promise<string> {
-    return JSON.stringify(await this.getOrg(ctx, orgId));
+    const org = await this.getOrg(ctx, orgId);
+    // Membership, type and MSP are network-wide facts; the tier and thresholds
+    // are not. Everyone sees the former, only the platform and the org itself
+    // see the latter.
+    if (!this.maySeeOrgPrivate(ctx, org)) return JSON.stringify(org);
+    const priv = await this.getOrgPrivate(ctx, orgId);
+    return JSON.stringify({ ...org, ...(priv ?? {}) });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
+  // Canonical private payload lives in the platform org's implicit collection
+  // (PRIVACY-DESIGN.md §2.2.1).
+  private readonly PRIVATE_COLLECTION = '_implicit_org_PlatformMSP';
+
+  private async putOrgPrivate(ctx: Context, orgId: string, value: OrganizationPrivate): Promise<void> {
+    await ctx.stub.putPrivateData(this.PRIVATE_COLLECTION, this.orgKey(orgId), Buffer.from(JSON.stringify(value)));
+  }
+
+  private async getOrgPrivate(ctx: Context, orgId: string): Promise<OrganizationPrivate | null> {
+    try {
+      const data = await ctx.stub.getPrivateData(this.PRIVATE_COLLECTION, this.orgKey(orgId));
+      if (!data || data.length === 0) return null;
+      return JSON.parse(data.toString()) as OrganizationPrivate;
+    } catch {
+      return null; // not a collection member — the boundary working
+    }
+  }
+
+  /** Platform, or the organisation itself, may see its tier and thresholds. */
+  private maySeeOrgPrivate(ctx: Context, org: Organization): boolean {
+    const caller = ctx.clientIdentity.getMSPID();
+    return caller === 'PlatformMSP' || caller === org.msp_id;
+  }
+
+  /** Deterministic across endorsers — the tx id is the only entropy chaincode
+   *  may safely use, since every endorser must compute the same value. */
+  private newSalt(ctx: Context): string {
+    return ctx.stub.getTxID();
+  }
+
   private orgKey(orgId: string): string {
     return `ORG:${orgId}`;
   }
@@ -243,8 +301,7 @@ export class OnboardingChaincode extends Contract {
     const data = await ctx.stub.getState(this.orgKey(orgId));
     if (!data || data.length === 0) throw new Error(`Organization ${orgId} not found`);
     const org = JSON.parse(data.toString()) as Organization;
-    // Backfill default for orgs created before maker_checker_thresholds was added.
-    if (!org.maker_checker_thresholds) org.maker_checker_thresholds = {};
+
     return org;
   }
 }

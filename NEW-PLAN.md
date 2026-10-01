@@ -17,7 +17,7 @@ Block 4 implements.
 | 1 | Event payload scrub | `feat/harden-01-events` | [x] Done |
 | 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [x] Done |
 | 3 | Identity & access | `feat/harden-03-identity` | [~] Mostly done — Fabric CA outstanding |
-| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [ ] Not started |
+| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [x] Done — ABAC defers with Fabric CA |
 | 5 | Maker-checker | `feat/harden-05-maker-checker` | [ ] Not started |
 | 6 | Bridge durability | `feat/harden-06-bridge` | [ ] Not started |
 | 7 | Polygon contracts & settlement | `feat/harden-07-contracts` | [ ] Not started |
@@ -203,6 +203,85 @@ lenders, assert the non-party lender's `getPrivateData` returns empty.
 **Commits:** ~12 small.
 
 **Verify:** `security-review` · two-deal leak test · demo green · `peer chaincode query` from a non-party peer returns nothing.
+
+**Progress.** The purchase order is fully migrated and the property is proven on a
+live network: querying the same PO through `peer chaincode query`, PlatformMSP
+sees `gross_value`, `price_per_unit`, quantity and description, while LenderMSP —
+same channel, not a party — gets the index and nothing else. Demo green end to end.
+
+Landed: `invokeWithTransient` with explicit endorsing org; `newSalt()` (128-bit
+CSPRNG, one per item) and `partyMsps()` resolving org→MSP from onboarding-cc;
+PO split into public index and private payload with party checks on read and
+write; chaincode test harness with private-data, transient and MSP support;
+`--signature-policy` in the deploy script; endorsement policy settled.
+
+**Three things the implementation forced, all recorded in PRIVACY-DESIGN.md:**
+
+- §2.2.1 — payload is **platform-custodied**, not copied to every party's
+  collection. Writing to an org's implicit collection requires that org to
+  endorse, and chaincode reads of org-specific collections are non-deterministic
+  across endorsers.
+- §3.1 — `blockToLive` is **not available** on implicit collections; Fabric never
+  purges them, so the NFR-05 evidence trail is guaranteed rather than configured.
+- §3.6 — endorsement is `OR('PlatformMSP.member')`, so trade and finance writes
+  are endorsed by a single organisation. Signatures still carry the acting user,
+  so attribution holds, but no member can independently endorse a write.
+
+**Resolved — there was no blocker.** The `DEADLINE_EXCEEDED` failures on
+`validateEligibility`, `runThreeWayMatch` and `acceptOffer` were environmental,
+not a defect:
+
+- the stack was still settling after repeated chaincode deploys (a new container
+  per chaincode per peer starts on first invoke), and
+- `tsx watch` was restarting the API mid-run while chaincode and service files
+  were being edited, cancelling in-flight commit waits.
+
+The hypothesis recorded here — that the gateway routed commit-status to a peer of
+the signing org that the host could not resolve — was **tested and disproved**:
+the identical `validateEligibility` call completes in 2s both as `platform`
+(the gateway peer's own org) and as `amit` (LenderMSP). On a settled stack the
+full demo passes end to end, twice in a row.
+
+One real fix did come out of the investigation and is kept: transactions touching
+a private collection now name their endorsing org on *every* invoke, not just the
+transient ones. Without it the gateway offers peers that do not hold the
+collection and the call blocks until its deadline — that part was genuine, and it
+is what made the cross-chaincode lien lock hang.
+
+**Verified on-chain, twice, on live peers.** Querying the same record through
+`peer chaincode query`:
+
+| Record | PlatformMSP (party) | Non-party org |
+|---|---|---|
+| Purchase order | `gross_value` 25000000, `price_per_unit` 2500, quantity, description | index only — no figures |
+| Invoice | `amount` 24750000, `quantity` 9900, `currency` INR, salt | `amount`, `quantity`, `currency`, salt all **absent** |
+
+**Complete.** All four chaincodes migrated: purchase order, GRN, invoice,
+financing terms, and the organisation risk tier and approval thresholds. Verified
+on live peers — a non-party sees that a record exists and its state, never its
+figures:
+
+| Record | Custodian sees | Non-party sees |
+|---|---|---|
+| Purchase order | `gross_value` 25000000, `price_per_unit` 2500 | index only |
+| Invoice | `amount` 24750000, `quantity` 9900 | absent |
+| Finance request | `discount_rate` 0.02, `requested_amount` 24255000 | absent — status `Disbursed` still visible |
+
+The buyer can see that its supplier's invoice is financed and disbursed, which
+Rule-02 needs, without learning what the lender charged. A competing lender sees
+the same.
+
+**The two-deal test earned its place.** Written as a regression test for §1.1 —
+Bharat financing with HDFC at 2.0% and ICICI at 3.5% on one ledger — it
+immediately found a real leak in already-committed code: `createFinanceRequest`
+still persisted the whole merged record, rate included, to channel state. Every
+single-deal test passed regardless, because with one lender there is no
+competitor to leak to.
+
+**Still open:** ABAC (`dept=treasury` on escrow amounts) defers with Fabric CA,
+Block 3. MongoDB partitioning is not applicable — mongoose is a dependency
+nothing uses. ABAC defers with Fabric CA (Block 3). MongoDB partitioning is
+not applicable — mongoose is a dependency but nothing in the API uses it.
 
 ---
 

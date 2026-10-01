@@ -1,6 +1,7 @@
 import { Contract } from '@hyperledger/fabric-gateway';
 import { FabricError } from '../errors/AppError.js';
 import { logger } from '../config/logger.js';
+import { env } from '../config/env.js';
 import { getContract } from './gateway.js';
 
 const decoder = new TextDecoder('utf-8');
@@ -33,6 +34,25 @@ async function withContract<T>(
   }
 }
 
+// Chaincodes whose transactions touch a private collection — on read as well as
+// write. Their endorsement policy is OR('PlatformMSP.member') because only the
+// custodian org can endorse against its own implicit collection
+// (PRIVACY-DESIGN.md §2.2.1, §3.6). Naming the endorsing org explicitly keeps
+// the gateway from discovering peers that do not hold the collection and then
+// blocking until the deadline — which is how this first showed up: a
+// cross-chaincode lien lock hanging for two minutes rather than failing.
+const PRIVATE_DATA_CHAINCODES = new Set([
+  env.FABRIC_CHAINCODE_TRADE_DOC,
+  env.FABRIC_CHAINCODE_FINANCE,
+  // onboarding-cc joined this set when the risk tier and maker-checker
+  // thresholds moved into the collection.
+  env.FABRIC_CHAINCODE_ONBOARDING,
+]);
+
+function endorsingOrgsFor(ccName: string): string[] | undefined {
+  return PRIVATE_DATA_CHAINCODES.has(ccName) ? [env.FABRIC_MSP_ID] : undefined;
+}
+
 // Submit a transaction (state-changing). Goes through endorse → order → commit.
 export async function invoke<T = unknown>(
   ccName: string,
@@ -40,7 +60,43 @@ export async function invoke<T = unknown>(
   ...args: string[]
 ): Promise<T> {
   logger.debug({ chaincode: ccName, fn, args }, 'Fabric invoke');
-  return withContract<T>(ccName, fn, (c) => c.submitTransaction(fn, ...args));
+  const endorsingOrganizations = endorsingOrgsFor(ccName);
+  return withContract<T>(ccName, fn, (c) =>
+    endorsingOrganizations
+      ? c.submit(fn, { arguments: args, endorsingOrganizations })
+      : c.submitTransaction(fn, ...args),
+  );
+}
+
+/**
+ * Submit with a transient payload — commercial figures travel here, never as
+ * arguments, so they do not appear in the transaction proposal that endorsers
+ * and the orderer see (PRIVACY-DESIGN.md §2.2).
+ *
+ * The payload is deliberately absent from the debug log below; logging it would
+ * undo the point of sending it out of band.
+ *
+ * `endorsingOrganizations` is required, not optional. The gateway will not
+ * disclose transient data to peers outside its own organisation, so a buyer's
+ * submission would otherwise fail with "no endorsers found in the gateway's
+ * organization". The canonical payload lives in the platform org's implicit
+ * collection (PRIVACY-DESIGN.md §2.2.1), and only that org can endorse a write
+ * to it — so the platform MSP is named explicitly.
+ */
+export async function invokeWithTransient<T = unknown>(
+  ccName: string,
+  fn: string,
+  args: string[],
+  transient: Record<string, unknown>,
+): Promise<T> {
+  logger.debug({ chaincode: ccName, fn, args }, 'Fabric invoke (with transient payload)');
+  return withContract<T>(ccName, fn, (c) =>
+    c.submit(fn, {
+      arguments: args,
+      transientData: { payload: Buffer.from(JSON.stringify(transient)) },
+      endorsingOrganizations: endorsingOrgsFor(ccName) ?? [env.FABRIC_MSP_ID],
+    }),
+  );
 }
 
 // Evaluate a query (read-only). Hits one peer, no consensus.

@@ -162,3 +162,30 @@ describe('sensitive organisation fields', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('activity feed scoping', () => {
+  async function tokenFor(username: string) {
+    const res = await request.post('/api/auth/login').send({ username, secret: `${username}-dev-secret` });
+    return res.body.data.token as string;
+  }
+
+  // Event payloads no longer carry figures, but a global feed would still tell
+  // every member who is trading with whom and how often — commercial
+  // intelligence in its own right (PRIVACY-DESIGN.md §3.2).
+  it('serves the feed to a member scoped to their own deals', async () => {
+    const token = await tokenFor('kavitha');
+    const res = await request.get('/api/activity').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    for (const entry of res.body.data.entries) {
+      if (entry.parties?.length) {
+        expect(entry.parties).toContain('bharat-001');
+      }
+    }
+  });
+
+  it('gives the auditor the unscoped feed — observer access by charter', async () => {
+    const token = await tokenFor('auditor');
+    const res = await request.get('/api/activity').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+  });
+});

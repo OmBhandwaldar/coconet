@@ -16,7 +16,12 @@ function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unkno
     }
     return { status: 200, payload: Buffer.from('') }; // lockPO / assignInvoice
   });
+  const priv: Record<string, Buffer> = {};
+  const transientMap = new Map<string, Buffer>();
   const stub = {
+    getPrivateData: sinon.stub().callsFake(async (_c: string, key: string) => priv[key] ?? Buffer.alloc(0)),
+    putPrivateData: sinon.stub().callsFake(async (_c: string, key: string, val: Buffer) => { priv[key] = val; }),
+    getTransient: sinon.stub().returns(transientMap),
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
     deleteState: sinon.stub().callsFake(async (key: string) => { delete state[key]; }),
@@ -24,7 +29,9 @@ function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unkno
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
     invokeChaincode,
   };
-  return { ctx: { stub } as any, invokeChaincode };
+  return { ctx: { stub, clientIdentity: { getMSPID: sinon.stub().returns('PlatformMSP') },
+    __private: priv,
+    __setTransient: (v: unknown) => transientMap.set('payload', Buffer.from(JSON.stringify(v))) } as any, invokeChaincode };
 }
 
 const preShip = {
@@ -34,6 +41,7 @@ const preShip = {
   asset_id: 'TM-PO-2024-0892',
   requestor_org_id: 'bharat-001',
   lender_id: 'hdfc-001',
+  lender_msp: 'LenderMSP',
   requested_amount: 12000000,
 };
 
@@ -44,6 +52,7 @@ const disc = {
   asset_id: 'BS-INV-2024-1102',
   requestor_org_id: 'bharat-001',
   lender_id: 'hdfc-001',
+  lender_msp: 'LenderMSP',
   requested_amount: 24255000,
 };
 
@@ -52,12 +61,43 @@ const approvedInvoice = { status: 'Approved', match_result: { passed: true } };
 
 const cc = new FinanceChaincode();
 
+// ─── Private-data test helpers (PRIVACY-DESIGN.md §2.1) ──────────────────────
+// Financing terms travel as transient data; identifiers and state as arguments.
+const FR_PARTIES = ['SupplierMSP', 'LenderMSP', 'PlatformMSP'];
+const FR_SALT = '0123456789abcdef0123456789abcdef';
+
+async function createFR(ctx: any, fr: any) {
+  ctx.__setTransient({ requested_amount: fr.requested_amount, discount_rate: fr.discount_rate, salt: FR_SALT });
+  const { requested_amount, discount_rate, ...index } = fr;
+  return cc.createFinanceRequest(ctx, JSON.stringify({ ...index, party_msps: FR_PARTIES }));
+}
+
+async function quote(ctx: any, id: string, q: Record<string, unknown>) {
+  ctx.__setTransient({ ...q, salt: FR_SALT });
+  return cc.submitQuote(ctx, id);
+}
+
+async function approve(ctx: any, id: string, amount: number) {
+  ctx.__setTransient({ approved_amount: amount });
+  return cc.approveFinancing(ctx, id);
+}
+
+async function disburse(ctx: any, id: string, ref: string, net?: number) {
+  ctx.__setTransient(net === undefined ? {} : { net_disbursed: net });
+  return cc.disburseFunds(ctx, id, ref);
+}
+
+async function repay(ctx: any, id: string, amount: number, ref: string) {
+  ctx.__setTransient({ repayment_amount: amount });
+  return cc.recordRepayment(ctx, id, ref);
+}
+
 describe('FinanceChaincode', () => {
 
   describe('createFinanceRequest', () => {
     it('creates a request in Requested status', async () => {
       const { ctx } = makeCtx();
-      const fr = JSON.parse(await cc.createFinanceRequest(ctx, JSON.stringify(preShip)));
+      const fr = JSON.parse(await createFR(ctx, preShip));
       expect(fr.status).to.equal('Requested');
       expect(fr.security_interest_state).to.equal('None');
     });
@@ -65,21 +105,21 @@ describe('FinanceChaincode', () => {
     it('rejects an invalid product_type', async () => {
       const { ctx } = makeCtx();
       await expect(
-        cc.createFinanceRequest(ctx, JSON.stringify({ ...preShip, product_type: 'Mortgage' }))
+        createFR(ctx, { ...preShip, product_type: 'Mortgage' })
       ).to.be.rejectedWith(/Invalid product_type/);
     });
 
     it('rejects a duplicate request_id', async () => {
       const { ctx } = makeCtx();
-      await cc.createFinanceRequest(ctx, JSON.stringify(preShip));
-      await expect(cc.createFinanceRequest(ctx, JSON.stringify(preShip))).to.be.rejectedWith(/already exists/);
+      await createFR(ctx, preShip);
+      await expect(createFR(ctx, preShip)).to.be.rejectedWith(/already exists/);
     });
   });
 
   describe('validateEligibility — Rule-01 (cross-chaincode read)', () => {
     it('passes for an Acknowledged PO (pre-shipment)', async () => {
       const { ctx, invokeChaincode } = makeCtx({}, { getPurchaseOrder: ackedPO });
-      await cc.createFinanceRequest(ctx, JSON.stringify(preShip));
+      await createFR(ctx, preShip);
       const fr = JSON.parse(await cc.validateEligibility(ctx, preShip.request_id));
       expect(fr.status).to.equal('Under Review');
       expect(fr.eligibility.passed).to.equal(true);
@@ -88,7 +128,7 @@ describe('FinanceChaincode', () => {
 
     it('passes for an Approved + matched invoice (discounting)', async () => {
       const { ctx } = makeCtx({}, { getInvoice: approvedInvoice });
-      await cc.createFinanceRequest(ctx, JSON.stringify(disc));
+      await createFR(ctx, disc);
       const fr = JSON.parse(await cc.validateEligibility(ctx, disc.request_id));
       expect(fr.eligibility.passed).to.equal(true);
       expect(fr.eligibility.checks.three_way_match_passed).to.equal(true);
@@ -96,7 +136,7 @@ describe('FinanceChaincode', () => {
 
     it('rejects an un-approved (Submitted) invoice — Rule-01', async () => {
       const { ctx } = makeCtx({}, { getInvoice: { status: 'Submitted', match_result: { passed: false } } });
-      await cc.createFinanceRequest(ctx, JSON.stringify(disc));
+      await createFR(ctx, disc);
       await expect(cc.validateEligibility(ctx, disc.request_id)).to.be.rejectedWith(/Rule-01|financeable/);
     });
   });
@@ -104,15 +144,15 @@ describe('FinanceChaincode', () => {
   describe('full pre-shipment flow', () => {
     async function offered() {
       const { ctx, invokeChaincode } = makeCtx({}, { getPurchaseOrder: ackedPO });
-      await cc.createFinanceRequest(ctx, JSON.stringify(preShip));
+      await createFR(ctx, preShip);
       await cc.validateEligibility(ctx, preShip.request_id);
-      await cc.submitQuote(ctx, preShip.request_id, JSON.stringify({ advance_rate: 0.48, interest_rate: 0.12, tenor_days: 45 }));
+      await quote(ctx, preShip.request_id, { advance_rate: 0.48, interest_rate: 0.12, tenor_days: 45 });
       return { ctx, invokeChaincode };
     }
 
     it('Offered → Accepted locks the PO via cross-invoke + perfects the lien', async () => {
       const { ctx, invokeChaincode } = await offered();
-      await cc.approveFinancing(ctx, preShip.request_id, '12000000');
+      await approve(ctx, preShip.request_id, 12000000);
       const fr = JSON.parse(await cc.acceptOffer(ctx, preShip.request_id));
       expect(fr.status).to.equal('Accepted');
       expect(fr.security_interest_state).to.equal('Perfected');
@@ -122,15 +162,15 @@ describe('FinanceChaincode', () => {
     it('disburses then records repayment, releasing the lien', async () => {
       const { ctx } = await offered();
       await cc.acceptOffer(ctx, preShip.request_id);
-      await cc.disburseFunds(ctx, preShip.request_id, 'NEFT-001', '');
-      const fr = JSON.parse(await cc.recordRepayment(ctx, preShip.request_id, '12177534', 'NETSETTLE-001'));
+      await disburse(ctx, preShip.request_id, 'NEFT-001');
+      const fr = JSON.parse(await repay(ctx, preShip.request_id, 12177534, 'NETSETTLE-001'));
       expect(fr.status).to.equal('Repaid');
       expect(fr.security_interest_state).to.equal('Released');
     });
 
     it('rejects disburse before accept (illegal transition)', async () => {
       const { ctx } = await offered();
-      await expect(cc.disburseFunds(ctx, preShip.request_id, 'X', '')).to.be.rejectedWith(/Illegal finance transition/);
+      await expect(disburse(ctx, preShip.request_id, 'X')).to.be.rejectedWith(/Illegal finance transition/);
     });
   });
 
@@ -139,14 +179,14 @@ describe('FinanceChaincode', () => {
       const state: Record<string, Buffer> = {};
       const { ctx } = makeCtx(state, { getPurchaseOrder: ackedPO });
       // Lender A finances the PO.
-      await cc.createFinanceRequest(ctx, JSON.stringify(preShip));
+      await createFR(ctx, preShip);
       await cc.validateEligibility(ctx, preShip.request_id);
-      await cc.submitQuote(ctx, preShip.request_id, JSON.stringify({ interest_rate: 0.12 }));
+      await quote(ctx, preShip.request_id, { interest_rate: 0.12 });
       await cc.acceptOffer(ctx, preShip.request_id);
 
       // Lender B tries to finance the same PO.
       const second = { ...preShip, request_id: 'FR-PRE-002', lender_id: 'icici-001' };
-      await cc.createFinanceRequest(ctx, JSON.stringify(second));
+      await createFR(ctx, second);
       // validateEligibility now sees the active lien.
       await expect(cc.validateEligibility(ctx, 'FR-PRE-002')).to.be.rejectedWith(/active lien|Rule-02/);
     });
@@ -154,9 +194,9 @@ describe('FinanceChaincode', () => {
     it('rejects acceptOffer when a competing lien appears on the asset', async () => {
       const state: Record<string, Buffer> = {};
       const { ctx } = makeCtx(state, { getPurchaseOrder: ackedPO });
-      await cc.createFinanceRequest(ctx, JSON.stringify(preShip));
+      await createFR(ctx, preShip);
       await cc.validateEligibility(ctx, preShip.request_id);
-      await cc.submitQuote(ctx, preShip.request_id, JSON.stringify({ interest_rate: 0.12 }));
+      await quote(ctx, preShip.request_id, { interest_rate: 0.12 });
       // Simulate a lien landing between eligibility and acceptance (race / concurrent lender).
       state[`LOCK:PO:${preShip.asset_id}`] = Buffer.from(JSON.stringify({ request_id: 'other' }));
       await expect(cc.acceptOffer(ctx, preShip.request_id)).to.be.rejectedWith(/already locked|Rule-02/);

@@ -7,14 +7,28 @@ chai.use(chaiAsPromised);
 const { expect } = chai;
 
 // Minimal Context + stub mock (mirrors onboarding-cc test harness).
-function makeCtx(state: Record<string, Buffer> = {}) {
+function makeCtx(state: Record<string, Buffer> = {}, opts: { msp?: string; transient?: unknown } = {}) {
+  // Private collections live in their own keyspace and are only readable by a
+  // peer of the owning org — the mock keeps them separate for the same reason.
+  const priv: Record<string, Buffer> = {};
+  const transientMap = new Map<string, Buffer>();
+  if (opts.transient !== undefined) {
+    transientMap.set('payload', Buffer.from(JSON.stringify(opts.transient)));
+  }
   const stub = {
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
+    deleteState: sinon.stub().callsFake(async (key: string) => { delete state[key]; }),
+    getPrivateData: sinon.stub().callsFake(async (_c: string, key: string) => priv[key] ?? Buffer.alloc(0)),
+    putPrivateData: sinon.stub().callsFake(async (_c: string, key: string, val: Buffer) => { priv[key] = val; }),
+    getTransient: sinon.stub().returns(transientMap),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
   };
-  return { stub } as any;
+  const clientIdentity = { getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP') };
+  const setTransient = (value: unknown) =>
+    transientMap.set('payload', Buffer.from(JSON.stringify(value)));
+  return { stub, clientIdentity, __private: priv, __setTransient: setTransient } as any;
 }
 
 // Worked-example PO — Tata → Bharat, 10,000 panels @ ₹2,500 = ₹2.5cr (EXAMPLE-FLOW step 1).
@@ -47,10 +61,62 @@ const validInvoice = {
 
 const cc = new TradeDocChaincode();
 
+// ─── Private-data test helpers (PRIVACY-DESIGN.md §2.1) ──────────────────────
+// createPO now takes identifiers as arguments and commercial figures as
+// transient data, so the figures never enter the transaction proposal.
+const PARTY_MSPS = ['BuyerMSP', 'SupplierMSP', 'PlatformMSP'];
+const TEST_SALT = '0123456789abcdef0123456789abcdef';
+
+function poIndexArgs(po: any) {
+  return JSON.stringify({
+    po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id,
+    party_msps: PARTY_MSPS, doc_hash: po.doc_hash,
+  });
+}
+
+function poPrivateArgs(po: any) {
+  return {
+    currency: po.currency, gross_value: po.gross_value,
+    item_description: po.item_description, quantity: po.quantity,
+    price_per_unit: po.price_per_unit, delivery_terms: po.delivery_terms ?? '',
+    payment_terms: po.payment_terms ?? '', salt: TEST_SALT,
+  };
+}
+
+/** Submit an invoice the way the API does: figures as transient. */
+async function submitInvoice(ctx: any, inv: any, overrides: Record<string, unknown> = {}) {
+  ctx.__setTransient({
+    amount: inv.amount, quantity: inv.quantity, currency: inv.currency ?? 'INR',
+    due_date: inv.due_date, salt: TEST_SALT, ...overrides,
+  });
+  return cc.submitInvoice(ctx, JSON.stringify({
+    invoice_id: inv.invoice_id, supplier_id: inv.supplier_id, buyer_id: inv.buyer_id,
+    po_id: inv.po_id, grn_id: inv.grn_id, doc_hash: inv.doc_hash,
+  }));
+}
+
+async function reviseInvoice(ctx: any, id: string, amount: number, quantity: number, docHash = '') {
+  ctx.__setTransient({ amount, quantity, salt: TEST_SALT });
+  return cc.reviseInvoice(ctx, id, docHash);
+}
+
+/** Submit a GRN the way the API does: quantity as transient, never an argument. */
+async function createGRN(ctx: any, grnId: string, poId: string, qty: number, docHash = '') {
+  ctx.__setTransient({ received_qty: qty, salt: TEST_SALT });
+  return cc.createGRN(ctx, grnId, poId, docHash);
+}
+
+/** Submit a PO the way the API does: index as args, figures as transient. */
+async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
+  ctx.__setTransient({ ...poPrivateArgs(po), ...overrides });
+  return cc.createPO(ctx, poIndexArgs(po));
+}
+
+
 // Helper: stand up a PO + accepted GRN so an invoice can match.
 async function seedPoAndGrn(ctx: any) {
-  await cc.createPO(ctx, JSON.stringify(validPO));
-  await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '10000', '');
+  await createPO(ctx, validPO);
+  await createGRN(ctx, validInvoice.grn_id, validPO.po_id, 10000, '');
   await cc.acceptGRN(ctx, validInvoice.grn_id);
 }
 
@@ -59,7 +125,7 @@ describe('TradeDocChaincode', () => {
   describe('createPO', () => {
     it('creates a PO directly in Issued status', async () => {
       const ctx = makeCtx();
-      const po = JSON.parse(await cc.createPO(ctx, JSON.stringify(validPO)));
+      const po = JSON.parse(await createPO(ctx, validPO));
       expect(po.status).to.equal('Issued');
       expect(po.po_id).to.equal('TM-PO-2024-0892');
       expect(po.gross_value).to.equal(25000000);
@@ -67,22 +133,22 @@ describe('TradeDocChaincode', () => {
 
     it('rejects duplicate po_id', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await expect(
-        cc.createPO(ctx, JSON.stringify({ ...validPO, doc_hash: 'other' }))
+        createPO(ctx, { ...validPO, doc_hash: 'other' })
       ).to.be.rejectedWith(/already exists/);
     });
 
     it('rejects missing supplier_id', async () => {
       const ctx = makeCtx();
       const { supplier_id, ...noSupplier } = validPO;
-      await expect(cc.createPO(ctx, JSON.stringify(noSupplier))).to.be.rejectedWith(/supplier_id is required/);
+      await expect(createPO(ctx, noSupplier)).to.be.rejectedWith(/supplier_id is required/);
     });
 
     it('rejects non-positive gross_value', async () => {
       const ctx = makeCtx();
       await expect(
-        cc.createPO(ctx, JSON.stringify({ ...validPO, gross_value: 0 }))
+        createPO(ctx, { ...validPO, gross_value: 0 })
       ).to.be.rejectedWith(/gross_value must be positive/);
     });
   });
@@ -90,20 +156,20 @@ describe('TradeDocChaincode', () => {
   describe('PO state machine', () => {
     it('Issued → Acknowledged by the supplier', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       const po = JSON.parse(await cc.acknowledgePO(ctx, validPO.po_id, 'bharat-001'));
       expect(po.status).to.equal('Acknowledged');
     });
 
     it('rejects acknowledge by a non-supplier', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await expect(cc.acknowledgePO(ctx, validPO.po_id, 'someone-else')).to.be.rejectedWith(/Only supplier/);
     });
 
     it('walks Acknowledged → Locked → Fulfilled → Closed', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await cc.acknowledgePO(ctx, validPO.po_id, 'bharat-001');
       expect(JSON.parse(await cc.lockPO(ctx, validPO.po_id)).status).to.equal('Locked');
       expect(JSON.parse(await cc.fulfillPO(ctx, validPO.po_id)).status).to.equal('Fulfilled');
@@ -112,13 +178,13 @@ describe('TradeDocChaincode', () => {
 
     it('rejects illegal transition Issued → Fulfilled', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       await expect(cc.fulfillPO(ctx, validPO.po_id)).to.be.rejectedWith(/Illegal PO transition/);
     });
 
     it('amends an Issued PO and records justification', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
+      await createPO(ctx, validPO);
       const po = JSON.parse(await cc.amendPO(ctx, validPO.po_id, JSON.stringify({ gross_value: 26000000 }), 'price revision'));
       expect(po.status).to.equal('Amended');
       expect(po.gross_value).to.equal(26000000);
@@ -129,8 +195,8 @@ describe('TradeDocChaincode', () => {
   describe('GRN', () => {
     it('creates and accepts a GRN, setting accepted_qty', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
-      await cc.createGRN(ctx, 'grn-1', validPO.po_id, '10000', '');
+      await createPO(ctx, validPO);
+      await createGRN(ctx, 'grn-1', validPO.po_id, 10000, '');
       const grn = JSON.parse(await cc.acceptGRN(ctx, 'grn-1'));
       expect(grn.status).to.equal('Accepted');
       expect(grn.accepted_qty).to.equal(10000);
@@ -138,17 +204,17 @@ describe('TradeDocChaincode', () => {
 
     it('rejects GRN against a non-existent PO', async () => {
       const ctx = makeCtx({});
-      await expect(cc.createGRN(ctx, 'grn-x', 'NO-SUCH-PO', '10', '')).to.be.rejectedWith(/not found/);
+      await expect(createGRN(ctx, 'grn-x', 'NO-SUCH-PO', 10, '')).to.be.rejectedWith(/not found/);
     });
 
     it('stores and registers an optional GRN doc_hash', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
-      const grn = JSON.parse(await cc.createGRN(ctx, 'grn-h', validPO.po_id, '10000', 'grn-hash-xyz'));
+      await createPO(ctx, validPO);
+      const grn = JSON.parse(await createGRN(ctx, 'grn-h', validPO.po_id, 10000, 'grn-hash-xyz'));
       expect(grn.doc_hash).to.equal('grn-hash-xyz');
       // A later document reusing that hash is blocked (FR-DOC-04).
       await expect(
-        cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, grn_id: 'grn-h', doc_hash: 'grn-hash-xyz' }))
+        submitInvoice(ctx, { ...validInvoice, grn_id: 'grn-h', doc_hash: 'grn-hash-xyz' })
       ).to.be.rejectedWith(/Duplicate document hash/);
     });
   });
@@ -157,7 +223,7 @@ describe('TradeDocChaincode', () => {
     it('submits an invoice in Submitted status', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      const inv = JSON.parse(await cc.submitInvoice(ctx, JSON.stringify(validInvoice)));
+      const inv = JSON.parse(await submitInvoice(ctx, validInvoice));
       expect(inv.status).to.equal('Submitted');
       expect(inv.invoice_id).to.equal('BS-INV-2024-0892');
     });
@@ -165,9 +231,9 @@ describe('TradeDocChaincode', () => {
     it('rejects a duplicate document hash (FR-DOC-04)', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await expect(
-        cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, invoice_id: 'BS-INV-DUP' }))
+        submitInvoice(ctx, { ...validInvoice, invoice_id: 'BS-INV-DUP' })
       ).to.be.rejectedWith(/Duplicate document hash/);
     });
 
@@ -175,7 +241,7 @@ describe('TradeDocChaincode', () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
       await expect(
-        cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, doc_hash: 'po-hash-0892' }))
+        submitInvoice(ctx, { ...validInvoice, doc_hash: 'po-hash-0892' })
       ).to.be.rejectedWith(/Duplicate document hash/);
     });
   });
@@ -184,7 +250,7 @@ describe('TradeDocChaincode', () => {
     it('passes when amount ≤ PO and qty ≤ accepted GRN, moving to Matched', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       const inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.status).to.equal('Matched');
       expect(inv.match_result.passed).to.equal(true);
@@ -196,7 +262,7 @@ describe('TradeDocChaincode', () => {
     it('fails when invoice amount exceeds PO gross_value (stays Submitted)', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, amount: 30000000 }));
+      await submitInvoice(ctx, { ...validInvoice, amount: 30000000 });
       const inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.status).to.equal('Submitted');
       expect(inv.match_result.passed).to.equal(false);
@@ -205,10 +271,10 @@ describe('TradeDocChaincode', () => {
 
     it('fails when invoice quantity exceeds accepted GRN quantity', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
-      await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
+      await createPO(ctx, validPO);
+      await createGRN(ctx, validInvoice.grn_id, validPO.po_id, 8000, '');
       await cc.acceptGRN(ctx, validInvoice.grn_id);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000
+      await submitInvoice(ctx, validInvoice); // qty 10000 > accepted 8000
       const inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.match_result.passed).to.equal(false);
       expect(inv.match_result.checks.qty_within_grn).to.equal(false);
@@ -218,14 +284,14 @@ describe('TradeDocChaincode', () => {
   describe('reviseInvoice', () => {
     it('corrects a failed Submitted invoice and re-matches to Matched', async () => {
       const ctx = makeCtx({});
-      await cc.createPO(ctx, JSON.stringify(validPO));
-      await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
+      await createPO(ctx, validPO);
+      await createGRN(ctx, validInvoice.grn_id, validPO.po_id, 8000, '');
       await cc.acceptGRN(ctx, validInvoice.grn_id);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000 → fails
+      await submitInvoice(ctx, validInvoice); // qty 10000 > accepted 8000 → fails
       let inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.status).to.equal('Submitted');
 
-      inv = JSON.parse(await cc.reviseInvoice(ctx, validInvoice.invoice_id, '20000000', '8000', ''));
+      inv = JSON.parse(await reviseInvoice(ctx, validInvoice.invoice_id, 20000000, 8000, ''));
       expect(inv.status).to.equal('Matched');
       expect(inv.quantity).to.equal(8000);
       expect(inv.amount).to.equal(20000000);
@@ -235,9 +301,9 @@ describe('TradeDocChaincode', () => {
     it('refuses to revise a non-Submitted (Matched) invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await cc.runThreeWayMatch(ctx, validInvoice.invoice_id); // → Matched
-      await expect(cc.reviseInvoice(ctx, validInvoice.invoice_id, '100', '100', ''))
+      await expect(reviseInvoice(ctx, validInvoice.invoice_id, 100, 100, ''))
         .to.be.rejectedWith(/Only a Submitted invoice can be revised/);
     });
   });
@@ -245,7 +311,7 @@ describe('TradeDocChaincode', () => {
   describe('approve / reject / dispute', () => {
     async function matchedInvoice(ctx: any) {
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await cc.runThreeWayMatch(ctx, validInvoice.invoice_id);
     }
 
@@ -259,7 +325,7 @@ describe('TradeDocChaincode', () => {
     it('refuses to approve an unmatched (Submitted) invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await expect(cc.approveInvoice(ctx, validInvoice.invoice_id)).to.be.rejectedWith(/Illegal invoice transition/);
     });
 
@@ -273,7 +339,7 @@ describe('TradeDocChaincode', () => {
     it('rejects (closes) a Submitted invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       const inv = JSON.parse(await cc.rejectInvoice(ctx, validInvoice.invoice_id, 'wrong buyer'));
       expect(inv.status).to.equal('Closed');
     });
@@ -282,7 +348,7 @@ describe('TradeDocChaincode', () => {
   describe('assignInvoice', () => {
     async function approvedInvoice(ctx: any) {
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await cc.runThreeWayMatch(ctx, validInvoice.invoice_id);
       await cc.approveInvoice(ctx, validInvoice.invoice_id);
     }
@@ -290,7 +356,7 @@ describe('TradeDocChaincode', () => {
     it('assigns an Approved invoice to a lender', async () => {
       const ctx = makeCtx({});
       await approvedInvoice(ctx);
-      const inv = JSON.parse(await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001'));
+      const inv = JSON.parse(await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001', 'LenderMSP'));
       expect(inv.status).to.equal('Assigned');
       expect(inv.assignment_status).to.equal('Assigned');
       expect(inv.assigned_to).to.equal('hdfc-001');
@@ -299,15 +365,15 @@ describe('TradeDocChaincode', () => {
     it('rejects a second assignment (locked against further assignment)', async () => {
       const ctx = makeCtx({});
       await approvedInvoice(ctx);
-      await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001');
-      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'icici-001')).to.be.rejectedWith(/already assigned/);
+      await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001', 'LenderMSP');
+      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'icici-001', 'LenderMSP')).to.be.rejectedWith(/already assigned/);
     });
 
     it('rejects assigning a Submitted (unapproved) invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
-      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001')).to.be.rejectedWith(/Illegal invoice transition/);
+      await submitInvoice(ctx, validInvoice);
+      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001', 'LenderMSP')).to.be.rejectedWith(/Illegal invoice transition/);
     });
   });
 });

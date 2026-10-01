@@ -15,6 +15,14 @@ export interface ActivityEntry {
   deal: string | null;
   tx: string | null;
   block: number | null;
+  /**
+   * Org ids named by the event — buyer, supplier, assignee, or the org being
+   * onboarded. Used to scope the feed: event payloads no longer carry figures
+   * (PRIVACY-DESIGN.md §3.2), but a global feed would still tell every member
+   * who is trading with whom and how often, which is itself commercial
+   * intelligence. Empty means network-wide (onboarding, platform actions).
+   */
+  parties: string[];
 }
 
 // Which business role performs each action in the trade flow. (Derived: the API
@@ -100,9 +108,19 @@ export function entityFromFabricPayload(p: Record<string, unknown>): string | nu
   return typeof v === 'string' ? v : null;
 }
 
-export function record(e: Omit<ActivityEntry, 'seq' | 'actor'> & { actor?: Actor | null }): ActivityEntry {
+/** Org ids a Fabric event payload names, for scoping the feed. */
+export function partiesFromFabricPayload(p: Record<string, unknown>): string[] {
+  const ids = [p.buyer_id, p.supplier_id, p.assigned_to, p.lender_id, p.requestor_org_id, p.org_id];
+  return [...new Set(ids.filter((v): v is string => typeof v === 'string'))];
+}
+
+export function record(
+  e: Omit<ActivityEntry, 'seq' | 'actor' | 'parties'> & { actor?: Actor | null; parties?: string[] },
+): ActivityEntry {
   // Explicit actor wins — some events (bank transfers) only know the role from their parties.
-  const entry: ActivityEntry = { ...e, actor: e.actor ?? ACTORS[e.event] ?? null, seq: ++seq };
+  const entry: ActivityEntry = {
+    ...e, actor: e.actor ?? ACTORS[e.event] ?? null, parties: e.parties ?? [], seq: ++seq,
+  };
   buffer.push(entry);
   if (buffer.length > MAX) buffer.shift();
   return entry;
@@ -110,12 +128,21 @@ export function record(e: Omit<ActivityEntry, 'seq' | 'actor'> & { actor?: Actor
 
 // Newest-first, optionally filtered by deal. `after` returns only newer entries
 // (for incremental polling); omit it to get the current window.
-export function list(opts: { deal?: string; after?: number; limit?: number } = {}): {
+export function list(opts: {
+  deal?: string; after?: number; limit?: number;
+  /** Requesting org. Omit only for platform/auditor, who see everything. */
+  viewerOrgId?: string;
+} = {}): {
   entries: ActivityEntry[];
   lastSeq: number;
 } {
-  const { deal, after, limit = 300 } = opts;
+  const { deal, after, limit = 300, viewerOrgId } = opts;
   let items = buffer;
+  // Scope to the viewer's own deals. An entry naming no party is network-wide
+  // (onboarding, platform actions) and stays visible to everyone.
+  if (viewerOrgId) {
+    items = items.filter((e) => e.parties.length === 0 || e.parties.includes(viewerOrgId));
+  }
   if (deal) items = items.filter((e) => e.deal === deal);
   if (after != null) items = items.filter((e) => e.seq > after);
   const entries = items.slice(-limit).reverse();

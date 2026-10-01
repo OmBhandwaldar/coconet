@@ -37,7 +37,12 @@ function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unkno
     }
     return { status: 200, payload: Buffer.from('') };
   });
+  const priv: Record<string, Buffer> = {};
+  const transientMap = new Map<string, Buffer>();
   const stub = {
+    getPrivateData: sinon.stub().callsFake(async (_c: string, key: string) => priv[key] ?? Buffer.alloc(0)),
+    putPrivateData: sinon.stub().callsFake(async (_c: string, key: string, val: Buffer) => { priv[key] = val; }),
+    getTransient: sinon.stub().returns(transientMap),
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
     deleteState: sinon.stub().callsFake(async (key: string) => { delete state[key]; }),
@@ -45,7 +50,9 @@ function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unkno
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
     invokeChaincode,
   };
-  return { ctx: { stub } as any };
+  return { ctx: { stub, clientIdentity: { getMSPID: sinon.stub().returns('PlatformMSP') },
+    __private: priv,
+    __setTransient: (v: unknown) => transientMap.set('payload', Buffer.from(JSON.stringify(v))) } as any };
 }
 
 function emitted(ctx: any): { name: string; payload: Record<string, unknown> }[] {
@@ -74,6 +81,7 @@ const disc = {
   asset_id: 'BS-INV-2024-1102',
   requestor_org_id: 'bharat-001',
   lender_id: 'hdfc-001',
+  lender_msp: 'LenderMSP',
   requested_amount: 24255000,
 };
 
@@ -86,20 +94,51 @@ const financeableInvoice = {
 
 const cc = new FinanceChaincode();
 
+// ─── Private-data test helpers (PRIVACY-DESIGN.md §2.1) ──────────────────────
+// Financing terms travel as transient data; identifiers and state as arguments.
+const FR_PARTIES = ['SupplierMSP', 'LenderMSP', 'PlatformMSP'];
+const FR_SALT = '0123456789abcdef0123456789abcdef';
+
+async function createFR(ctx: any, fr: any) {
+  ctx.__setTransient({ requested_amount: fr.requested_amount, discount_rate: fr.discount_rate, salt: FR_SALT });
+  const { requested_amount, discount_rate, ...index } = fr;
+  return cc.createFinanceRequest(ctx, JSON.stringify({ ...index, party_msps: FR_PARTIES }));
+}
+
+async function quote(ctx: any, id: string, q: Record<string, unknown>) {
+  ctx.__setTransient({ ...q, salt: FR_SALT });
+  return cc.submitQuote(ctx, id);
+}
+
+async function approve(ctx: any, id: string, amount: number) {
+  ctx.__setTransient({ approved_amount: amount });
+  return cc.approveFinancing(ctx, id);
+}
+
+async function disburse(ctx: any, id: string, ref: string, net?: number) {
+  ctx.__setTransient(net === undefined ? {} : { net_disbursed: net });
+  return cc.disburseFunds(ctx, id, ref);
+}
+
+async function repay(ctx: any, id: string, amount: number, ref: string) {
+  ctx.__setTransient({ repayment_amount: amount });
+  return cc.recordRepayment(ctx, id, ref);
+}
+
 describe('finance-cc event payload contract', () => {
 
   it('emits no commercial data across the full financing lifecycle', async () => {
     const { ctx } = makeCtx({}, { getInvoice: financeableInvoice });
-    await cc.createFinanceRequest(ctx, JSON.stringify(disc));
+    await createFR(ctx, disc);
     await cc.validateEligibility(ctx, disc.request_id);
     await cc.assignLender(ctx, disc.request_id, 'hdfc-001');
-    await cc.submitQuote(ctx, disc.request_id, JSON.stringify({
+    await quote(ctx, disc.request_id, {
       advance_rate: 0.98, discount_rate: 0.02, interest_rate: 0.12, tenor_days: 60,
-    }));
-    await cc.approveFinancing(ctx, disc.request_id, '24255000');
+    });
+    await approve(ctx, disc.request_id, 24255000);
     await cc.acceptOffer(ctx, disc.request_id);
-    await cc.disburseFunds(ctx, disc.request_id, 'NEFT-REF-1', '12077466');
-    await cc.recordRepayment(ctx, disc.request_id, '24750000', 'UTR-1');
+    await disburse(ctx, disc.request_id, 'NEFT-REF-1', 12077466);
+    await repay(ctx, disc.request_id, 24750000, 'UTR-1');
     assertNoCommercialData(emitted(ctx));
   });
 
@@ -107,7 +146,7 @@ describe('finance-cc event payload contract', () => {
   // text in an immutable channel-wide event is exactly the surface §3.2 closes.
   it('emits no commercial data when eligibility FAILS', async () => {
     const { ctx } = makeCtx({}, { getInvoice: { invoice_id: disc.asset_id, status: 'Submitted' } });
-    await cc.createFinanceRequest(ctx, JSON.stringify(disc));
+    await createFR(ctx, disc);
     await cc.validateEligibility(ctx, disc.request_id).catch(() => { /* throws by design */ });
 
     const names = emitted(ctx).map((e) => e.name);

@@ -31,13 +31,17 @@ function collectKeys(value: unknown, into: string[] = []): string[] {
 }
 
 function makeCtx(state: Record<string, Buffer> = {}) {
+  const priv: Record<string, Buffer> = {};
   const stub = {
+    getPrivateData: sinon.stub().callsFake(async (_c: string, k: string) => priv[k] ?? Buffer.alloc(0)),
+    putPrivateData: sinon.stub().callsFake(async (_c: string, k: string, v: Buffer) => { priv[k] = v; }),
+    getTxID: sinon.stub().returns('tx-deterministic-salt'),
     getState: sinon.stub().callsFake(async (key: string) => state[key] ?? Buffer.alloc(0)),
     putState: sinon.stub().callsFake(async (key: string, val: Buffer) => { state[key] = val; }),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
   };
-  return { stub } as any;
+  return { stub, clientIdentity: { getMSPID: sinon.stub().returns('PlatformMSP') }, __private: priv } as any;
 }
 
 function emitted(ctx: any): { name: string; payload: Record<string, unknown> }[] {
@@ -111,5 +115,70 @@ describe('onboarding-cc event payload contract', () => {
     const ev = emitted(ctx).find((e) => e.name === 'RiskTierAssigned');
     expect(ev, 'RiskTierAssigned must be emitted').to.not.equal(undefined);
     expect(Object.keys(ev!.payload)).to.not.contain('risk_tier');
+  });
+});
+
+// ─── Organisation private data (PRIVACY-DESIGN.md §2.1) ──────────────────────
+// Block 1 took the risk tier and the maker-checker threshold out of events.
+// Leaving them in channel public state would have moved the leak rather than
+// closed it, because any member's peer reads public state directly — redacting
+// them in the API is not a boundary.
+describe('onboarding-cc organisation private data', () => {
+  it('keeps the risk tier and thresholds out of channel public state', async () => {
+    const state: Record<string, Buffer> = {};
+    const ctx = makeCtx(state);
+    await cc.createOrganization(ctx, JSON.stringify(tata));
+    await cc.updateOrganizationStatus(ctx, tata.org_id, 'Approved');
+    await cc.setRiskTier(ctx, tata.org_id, 'High-touch');
+    await cc.setMakerCheckerThreshold(ctx, tata.org_id, 'PurchaseOrder', '10000000');
+
+    const publicJson = state[`ORG:${tata.org_id}`].toString();
+    expect(publicJson, 'public state leaks the risk tier').to.not.contain('High-touch');
+    expect(publicJson, 'public state leaks the threshold').to.not.contain('10000000');
+    // ...while the facts the network legitimately shares remain.
+    const org = JSON.parse(publicJson);
+    expect(org.org_id).to.equal(tata.org_id);
+    expect(org.org_type).to.equal('Buyer');
+    expect(org.status).to.equal('Approved');
+  });
+
+  it('hides them from another organisation', async () => {
+    const state: Record<string, Buffer> = {};
+    const ctx = makeCtx(state);
+    await cc.createOrganization(ctx, JSON.stringify(tata));
+    await cc.updateOrganizationStatus(ctx, tata.org_id, 'Approved');
+    await cc.setRiskTier(ctx, tata.org_id, 'High-touch');
+
+    ctx.clientIdentity.getMSPID.returns('SupplierMSP');
+    const seen = JSON.parse(await cc.getOrganization(ctx, tata.org_id));
+    expect(seen.org_id).to.equal(tata.org_id);
+    expect(seen).to.not.have.property('risk_tier');
+    expect(seen).to.not.have.property('maker_checker_thresholds');
+  });
+
+  it('shows them to the organisation itself', async () => {
+    const state: Record<string, Buffer> = {};
+    const ctx = makeCtx(state);
+    await cc.createOrganization(ctx, JSON.stringify(tata));
+    await cc.updateOrganizationStatus(ctx, tata.org_id, 'Approved');
+    await cc.setRiskTier(ctx, tata.org_id, 'High-touch');
+
+    ctx.clientIdentity.getMSPID.returns('BuyerMSP'); // tata's own MSP
+    const seen = JSON.parse(await cc.getOrganization(ctx, tata.org_id));
+    expect(seen.risk_tier).to.equal('High-touch');
+  });
+
+  it('refuses another organisation reading a threshold', async () => {
+    const state: Record<string, Buffer> = {};
+    const ctx = makeCtx(state);
+    await cc.createOrganization(ctx, JSON.stringify(tata));
+    await cc.updateOrganizationStatus(ctx, tata.org_id, 'Approved');
+    await cc.setMakerCheckerThreshold(ctx, tata.org_id, 'PurchaseOrder', '10000000');
+
+    ctx.clientIdentity.getMSPID.returns('LenderMSP');
+    let threw = false;
+    try { await cc.getMakerCheckerThreshold(ctx, tata.org_id, 'PurchaseOrder'); }
+    catch (e) { threw = true; expect((e as Error).message).to.match(/may not read/); }
+    expect(threw, 'a competitor must not read approval limits').to.equal(true);
   });
 });
