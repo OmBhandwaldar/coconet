@@ -22,6 +22,7 @@ const invoice1102 = { invoice_id: 'BS-INV-2024-1102', amount: 24750000, status: 
 
 beforeEach(() => {
   vi.spyOn(fabricService, 'invoke').mockResolvedValue(preFR);
+  vi.spyOn(fabricService, 'invokeWithTransient').mockResolvedValue(preFR);
   vi.spyOn(fabricService, 'query').mockImplementation(async (_cc: string, fn: string) =>
     (fn === 'getOrganization' ? { msp_id: 'LenderMSP' } : preFR) as never,
   );
@@ -35,10 +36,15 @@ describe('POST /api/finance/pre-shipment', () => {
       requested_amount: 12000000, lender_id: 'hdfc-001',
     });
     expect(res.status).toBe(201);
-    const arg = JSON.parse((fabricService.invoke as any).mock.calls[0][2]);
-    expect(arg.product_type).toBe('PreShipment');
-    expect(arg.asset_type).toBe('PO');
-    expect(arg.asset_id).toBe('TM-PO-2024-0892');
+    const [, , args, transient] = (fabricService.invokeWithTransient as any).mock.calls[0];
+    const index = JSON.parse(args[0]);
+    expect(index.product_type).toBe('PreShipment');
+    expect(index.asset_type).toBe('PO');
+    expect(index.asset_id).toBe('TM-PO-2024-0892');
+    // The amount is the thing a competing lender must not learn.
+    expect(index).not.toHaveProperty('requested_amount');
+    expect(transient.requested_amount).toBe(12000000);
+    expect(transient.salt).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('rejects a missing po_id with 400', async () => {
@@ -57,10 +63,13 @@ describe('POST /api/finance/invoice-discounting', () => {
       requested_amount: 24255000, lender_id: 'hdfc-001', discount_rate: 0.02,
     });
     expect(res.status).toBe(201);
-    const arg = JSON.parse((fabricService.invoke as any).mock.calls[0][2]);
-    expect(arg.product_type).toBe('InvoiceDiscounting');
-    expect(arg.asset_type).toBe('Invoice');
-    expect(arg.discount_rate).toBe(0.02);
+    const [, , args, transient] = (fabricService.invokeWithTransient as any).mock.calls[0];
+    const index = JSON.parse(args[0]);
+    expect(index.product_type).toBe('InvoiceDiscounting');
+    expect(index.asset_type).toBe('Invoice');
+    // The discount rate IS the lender's pricing — it must not reach the channel.
+    expect(index).not.toHaveProperty('discount_rate');
+    expect(transient.discount_rate).toBe(0.02);
   });
 
   it('rejects a discount_rate above 1 with 400', async () => {
@@ -88,7 +97,10 @@ describe('finance lifecycle routes', () => {
   it('disburses (plain, no net settlement) passing empty net arg', async () => {
     const res = await request.put('/api/finance/FR-PRE-001/disburse').send({ disbursement_ref: 'NEFT-1' });
     expect(res.status).toBe(200);
-    expect(fabricService.invoke).toHaveBeenCalledWith('finance-cc', 'disburseFunds', 'FR-PRE-001', 'NEFT-1', '');
+    const [, fn, args, transient] = (fabricService.invokeWithTransient as any).mock.calls.at(-1);
+    expect(fn).toBe('disburseFunds');
+    expect(args).toEqual(['FR-PRE-001', 'NEFT-1']);
+    expect(transient).toEqual({});
   });
 });
 
@@ -108,6 +120,7 @@ describe('net settlement', () => {
       return {} as any;
     });
     vi.spyOn(fabricService, 'invoke').mockResolvedValue(discFR);
+    vi.spyOn(fabricService, 'invokeWithTransient').mockResolvedValue(discFR);
 
     const res = await request.put('/api/finance/FR-DISC-001/disburse')
       .send({ disbursement_ref: 'NEFT-DISC-001', pre_shipment_request_id: 'FR-PRE-001' });
@@ -115,6 +128,10 @@ describe('net settlement', () => {
     expect(res.body.data.settlement.net_to_supplier).toBe(12077466);
     expect(res.body.data.pre_shipment_request_id).toBe('FR-PRE-001');
     // pre-shipment loan auto-settled via recordRepayment
-    expect(fabricService.invoke).toHaveBeenCalledWith('finance-cc', 'recordRepayment', 'FR-PRE-001', '12177534', 'NET-SETTLE:FR-DISC-001');
+    // The repayment figure travels as transient; the payment reference does not.
+    const repay = (fabricService.invokeWithTransient as any).mock.calls
+      .find((c: any[]) => c[1] === 'recordRepayment');
+    expect(repay[2]).toEqual(['FR-PRE-001', 'NET-SETTLE:FR-DISC-001']);
+    expect(repay[3]).toEqual({ repayment_amount: 12177534 });
   });
 });
