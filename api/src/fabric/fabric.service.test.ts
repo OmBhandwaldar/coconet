@@ -11,6 +11,9 @@ function mockContract(overrides: Partial<{
 }> = {}) {
   return {
     submitTransaction: vi.fn(overrides.submit ?? (async () => encoder.encode(''))),
+    // Chaincodes that touch a private collection go through submit() so the
+    // endorsing org can be named (PRIVACY-DESIGN.md §3.6).
+    submit: vi.fn(overrides.submit ?? (async () => encoder.encode(''))),
     evaluateTransaction: vi.fn(overrides.evaluate ?? (async () => encoder.encode(''))),
   } as any;
 }
@@ -27,7 +30,12 @@ describe('fabric.service', () => {
 
       const result = await invoke('onboarding-cc', 'createOrganization', '{"org_id":"tata-001"}');
       expect(result).toEqual({ org_id: 'tata-001', status: 'Pending' });
-      expect(contract.submitTransaction).toHaveBeenCalledWith('createOrganization', '{"org_id":"tata-001"}');
+      // onboarding-cc writes private data, so the endorsing org is named rather
+      // than left to discovery (PRIVACY-DESIGN.md §3.6).
+      expect(contract.submit).toHaveBeenCalledWith('createOrganization', {
+        arguments: ['{"org_id":"tata-001"}'],
+        endorsingOrganizations: ['PlatformMSP'],
+      });
     });
 
     it('returns null for empty response', async () => {

@@ -555,5 +555,11 @@ what remains open.
 | 13 | 27 Sep 2026 | **Endorsement policy is `OR('PlatformMSP.member')`** for every chaincode writing private data, and for `finance-cc` because it cross-invokes `trade-doc-cc`. | §3.6 | Found empirically in three steps: the gateway will not disclose transient data outside its own org; only the owning org endorses writes to its implicit collection; a Platform-only endorsement then failed to commit under majority-of-orgs. |
 | 14 | 1 Oct 2026 | **Accept single-org endorsement as a known limitation** rather than rebuild for party-held copies. | §11.1 | Platform is already the operator of record and party to every deal. Upgrade path recorded; nothing built is discarded by taking it later. |
 
+| 15 | 1 Oct 2026 | **Salt generated client-side for deal payloads, from the transaction id inside chaincode.** | §3.3 | Chaincode must be deterministic — every endorser has to compute the same value, so `crypto.randomBytes` is unusable there. The tx id is the only entropy available. |
+| 16 | 1 Oct 2026 | **Assignment adds the assignee to the asset's party set.** | §2.1 | Discounting transfers the receivable; without this the lender owned an invoice it could not read, which surfaced as the net-settlement maths producing `NaN`. |
+| 17 | 1 Oct 2026 | **Indexes are rebuilt field by field, never spread from the merged view.** | §2.1 | Spreading publishes the payload the collection exists to hide, and a field added later leaks silently. Two real leaks were shipped this way before the rule was adopted. |
+| 18 | 1 Oct 2026 | **The activity feed is scoped to the viewer's own deals.** | §3.2 | Payloads no longer carry figures, but a global feed still reveals who trades with whom and how often. |
+| 19 | 1 Oct 2026 | **Organisation risk tier and maker-checker thresholds are private**, visible to the platform and the organisation itself. | §2.1 | Removing them from events and redacting them in the API left them in channel state, which every member's peer reads directly. |
+
 **Keep this current.** Any decision that changes data placement, endorsement, or what a non-party can
 see gets a row here on the same commit that implements it.

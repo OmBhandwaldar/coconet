@@ -17,7 +17,7 @@ Block 4 implements.
 | 1 | Event payload scrub | `feat/harden-01-events` | [x] Done |
 | 2 | API quick wins + contract scanning | `feat/harden-02-quickwins` | [x] Done |
 | 3 | Identity & access | `feat/harden-03-identity` | [~] Mostly done — Fabric CA outstanding |
-| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [~] In progress — trade documents migrated and verified on-chain |
+| 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [x] Done — ABAC defers with Fabric CA |
 | 5 | Maker-checker | `feat/harden-05-maker-checker` | [ ] Not started |
 | 6 | Bridge durability | `feat/harden-06-bridge` | [ ] Not started |
 | 7 | Polygon contracts & settlement | `feat/harden-07-contracts` | [ ] Not started |
@@ -256,8 +256,31 @@ is what made the cross-chaincode lien lock hang.
 | Purchase order | `gross_value` 25000000, `price_per_unit` 2500, quantity, description | index only — no figures |
 | Invoice | `amount` 24750000, `quantity` 9900, `currency` INR, salt | `amount`, `quantity`, `currency`, salt all **absent** |
 
-**Remaining after that:** `finance-cc` payload split (GRN and invoice are done);
-per-org activity feed filtering; the two-deal leak test across two lenders. ABAC defers with Fabric CA (Block 3). MongoDB partitioning is
+**Complete.** All four chaincodes migrated: purchase order, GRN, invoice,
+financing terms, and the organisation risk tier and approval thresholds. Verified
+on live peers — a non-party sees that a record exists and its state, never its
+figures:
+
+| Record | Custodian sees | Non-party sees |
+|---|---|---|
+| Purchase order | `gross_value` 25000000, `price_per_unit` 2500 | index only |
+| Invoice | `amount` 24750000, `quantity` 9900 | absent |
+| Finance request | `discount_rate` 0.02, `requested_amount` 24255000 | absent — status `Disbursed` still visible |
+
+The buyer can see that its supplier's invoice is financed and disbursed, which
+Rule-02 needs, without learning what the lender charged. A competing lender sees
+the same.
+
+**The two-deal test earned its place.** Written as a regression test for §1.1 —
+Bharat financing with HDFC at 2.0% and ICICI at 3.5% on one ledger — it
+immediately found a real leak in already-committed code: `createFinanceRequest`
+still persisted the whole merged record, rate included, to channel state. Every
+single-deal test passed regardless, because with one lender there is no
+competitor to leak to.
+
+**Still open:** ABAC (`dept=treasury` on escrow amounts) defers with Fabric CA,
+Block 3. MongoDB partitioning is not applicable — mongoose is a dependency
+nothing uses. ABAC defers with Fabric CA (Block 3). MongoDB partitioning is
 not applicable — mongoose is a dependency but nothing in the API uses it.
 
 ---
