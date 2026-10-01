@@ -378,6 +378,20 @@ Every critical action above a configurable threshold requires two signatures:
 
 Thresholds configured per org + per transaction type via `onboarding-cc.setMakerCheckerThreshold()`.
 
+**Enforced since Block 5** ([NEW-PLAN.md](NEW-PLAN.md)). Four gates: `PO_ISSUE`,
+`GRN_ACCEPT`, `INVOICE_APPROVE`, `FINANCE_APPROVE`. The rules that matter when
+adding a fifth:
+1. Run the gate **after** the state-machine check, so a replay against an
+   already-transitioned entity is rejected before an approval record is touched.
+2. The gate **returns** a pending result; it must not throw. A thrown error
+   rolls back the approval record with the transition — Fabric cannot write
+   state and abort. The API answers 202, never 200 with an unchanged entity.
+3. Checker ≠ maker is asserted on `ctx.clientIdentity.getID()`, never on MSP.
+4. The maker's payload is replayed from the approval record, so the checker
+   commits the maker's figure and sends no transient data at all.
+5. The amount and threshold go in the **private** collection; only who must
+   sign is public.
+
 ### Correlation IDs
 Every API request gets a correlation ID (UUID) that flows through all services, chaincodes, and adapter calls — BRD Section 28. Used for end-to-end tracing.
 

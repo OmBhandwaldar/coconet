@@ -40,7 +40,7 @@ What it is not is production-ready. Verified against the code:
 - **No authentication at all** — no `auth` or `rbac` middleware; anyone reaching port 3000 can issue a PO or release an escrow.
 - **Every ledger action is attributed to one hardcoded Platform Admin**, so the audit trail cannot satisfy NFR-05.
 - **Financing terms sit on the shared channel**, violating NFR-06 — and 13 chaincode event payloads leaked amounts, quantities or free-text figures to every channel member, permanently (fixed in Block 1).
-- **Maker-checker thresholds are stored but never enforced** (`"storage only — Ring 11 enforces"`).
+- ~~**Maker-checker thresholds are stored but never enforced**~~ — fixed in Block 5.
 - **The bridge has no checkpointing, retries or HA story** — a failed cross-chain write is silently lost.
 - Three of six chaincodes and two of four contracts do not exist.
 
