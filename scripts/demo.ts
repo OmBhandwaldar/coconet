@@ -81,7 +81,8 @@ async function expectOk(method: string, path: string, body: unknown, tolerateExi
  * stopped firing would otherwise look exactly like a passing demo.
  */
 async function makerChecker(
-  maker: string, checker: string, method: string, path: string, body?: unknown,
+  maker: string, checker: string, method: string, path: string,
+  body?: unknown, probeSelfApproval = false,
 ): Promise<any> {
   actingAs(maker);
   const proposed = await call(method, path, body);
@@ -91,22 +92,21 @@ async function makerChecker(
   }
   ok(`proposed by ${maker} → PendingApproval (${proposed.data.tx_type})`);
 
+  // The maker cannot be their own checker. Probed here rather than in a
+  // separate pass, because the probe would otherwise leave its own pending
+  // record behind and the real maker's call would then be read as the checker's.
+  if (probeSelfApproval) {
+    const self = await call(method, path);
+    if (self.success) fail(`${maker} approved their own proposal on ${path}`);
+    ok(`${maker} refused as their own checker: ${String(self.error?.message ?? '').slice(0, 72)}`);
+  }
+
   actingAs(checker);
   const signed = await call(method, path);
   if (!signed.success) fail(`${method} ${path} (checker) → ${JSON.stringify(signed.error ?? signed)}`);
   if (signed.pending_approval) fail(`${path} still pending after ${checker} signed`);
   ok(`countersigned by ${checker}`);
   return signed.data;
-}
-
-/** The maker cannot be their own checker — asserted against the live chain. */
-async function assertSelfApprovalRefused(maker: string, method: string, path: string, body?: unknown) {
-  actingAs(maker);
-  const first = await call(method, path, body);
-  if (!first.pending_approval) fail(`${path} was not gated — cannot test self-approval`);
-  const again = await call(method, path);
-  if (again.success) fail(`${maker} approved their own proposal on ${path}`);
-  ok(`${maker} refused as their own checker: ${String(again.error?.message ?? '').slice(0, 60)}`);
 }
 
 async function setThreshold(orgId: string, txType: string, amount: number) {
@@ -166,8 +166,7 @@ async function main() {
   elig.eligibility?.passed === true || fail('pre-shipment eligibility failed'); ok('eligibility passed (Rule-01 cross-read + Rule-02)');
   await expectOk('PUT', `/api/finance/${FRPRE}/quote`, { advance_rate: 0.48, interest_rate: 0.12, tenor_days: 45 });
   // HDFC's credit decision needs its credit head as well as the RM.
-  await assertSelfApprovalRefused('amit', 'PUT', `/api/finance/${FRPRE}/approve`, { approved_amount: 12000000 });
-  const approved = await makerChecker('amit', 'nandita', 'PUT', `/api/finance/${FRPRE}/approve`, { approved_amount: 12000000 });
+  const approved = await makerChecker('amit', 'nandita', 'PUT', `/api/finance/${FRPRE}/approve`, { approved_amount: 12000000 }, true);
   approved.approved_amount === 12000000 || fail(`approved ${approved.approved_amount}, expected the figure Amit proposed`);
   ok(`facility approved at the maker's figure (${inrUsd(12000000)})`);
   actingAs('kavitha');         // the supplier accepts the offer
