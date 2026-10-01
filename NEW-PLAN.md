@@ -363,10 +363,20 @@ both chaincodes.
 contracts. `npm run demo` green end to end, with uneven thresholds so one run
 shows both the two-signature and the single-signature path.
 
+**Six holes a `code-review` pass found after the tests were green** — each now
+has a test named for what it allowed: the PO_ISSUE gate was skippable via
+`createGRN` on a draft PO; the platform could countersign any org's decision; an
+empty body approved a facility of nothing; `approveFinancing` was replayable; a
+refusal could be overwritten; and `reject()` wrote zeros over the real figures
+on a failed private read. A seventh finding did not hold — `createOrganization`
+seeds the thresholds map, so a fresh org is gated rather than blocked; verified
+against a live org before changing anything.
+
 **Still open:** `audit-cc.logEvent` on each approval (Block 8 — `audit-cc` does
 not exist); maker-checker on `approveOrganization` in `onboarding-cc`, which is
 a consortium decision rather than an organisation's own and needs a different
-approving-party model.
+approving-party model; and a refusal closing the entity rather than the attempt
+(PRIVACY-DESIGN.md §11.2, with the attempt-scoped key as the upgrade path).
 
 ---
 
