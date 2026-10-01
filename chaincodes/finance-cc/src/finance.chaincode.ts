@@ -123,13 +123,20 @@ export class FinanceChaincode extends Contract {
       lender_msp: input.lender_msp,
       party_msps: input.party_msps ?? [],
       requested_amount: priv.requested_amount,
+      // Discounting carries its rate from the outset; the other terms arrive
+      // with the lender's quote. All of them are private either way.
+      discount_rate: priv.discount_rate,
+      advance_rate: priv.advance_rate,
+      interest_rate: priv.interest_rate,
+      tenor_days: priv.tenor_days,
       salt: priv.salt,
       security_interest_state: 'None',
       status: 'Requested',
       created_at: now,
       updated_at: now,
     };
-    await ctx.stub.putState(this.frKey(fr.request_id), Buffer.from(JSON.stringify(fr)));
+    await this.persistIndex(ctx, fr);
+    await this.persistPrivate(ctx, fr);
     ctx.stub.setEvent('FinanceRequestCreated', Buffer.from(JSON.stringify({
       request_id: fr.request_id, product_type: fr.product_type,
       asset_type: fr.asset_type, asset_id: fr.asset_id, status: fr.status,
