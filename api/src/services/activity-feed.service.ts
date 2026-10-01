@@ -4,7 +4,7 @@ import { logger } from '../config/logger.js';
 import { getChaincodeEvents } from '../fabric/gateway.js';
 import { factoryContract, vaultContract } from '../polygon/escrow.client.js';
 import {
-  record, linkEscrow, escrowMeta, dealFrom, entityFromFabricPayload, LABELS,
+  record, linkEscrow, escrowMeta, dealFrom, entityFromFabricPayload, partiesFromFabricPayload, LABELS,
 } from './activity.service.js';
 
 // Populates the in-memory activity log from both chains: replays history on start
@@ -41,6 +41,7 @@ async function watchChaincode(cc: string): Promise<void> {
           deal: dealFrom(entity),
           tx: ev.transactionId,
           block: Number(ev.blockNumber),
+          parties: partiesFromFabricPayload(payload),
         });
       } catch {
         /* skip malformed payload */
