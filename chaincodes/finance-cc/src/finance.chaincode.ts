@@ -371,7 +371,11 @@ export class FinanceChaincode extends Contract {
 
   @Transaction(false)
   @Returns('string')
-  async listPendingApprovals(ctx: Context, orgId = ''): Promise<string> {
+  // orgId is required rather than defaulted: fabric-contract-api infers each
+  // parameter's type from decorator metadata, and a default makes it emit
+  // "Type not properly specified for parameter orgId" and refuse to start.
+  // Callers pass '' for "no filter".
+  async listPendingApprovals(ctx: Context, orgId: string): Promise<string> {
     return listPending(ctx, orgId || undefined);
   }
 

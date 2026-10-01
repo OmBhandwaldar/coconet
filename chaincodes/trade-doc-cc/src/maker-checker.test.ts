@@ -297,7 +297,7 @@ describe('maker-checker (BR-09, Rule-06)', () => {
       await seedToMatchedInvoice(as);
       await cc.approveInvoice(as(RAJESH), INV);
 
-      const queue = JSON.parse(await cc.listPendingApprovals(as(PRIYA)));
+      const queue = JSON.parse(await cc.listPendingApprovals(as(PRIYA), ''));
       expect(queue).to.have.lengthOf(1);
       expect(queue[0].tx_type).to.equal('INVOICE_APPROVE');
       expect(queue[0].entity_id).to.equal(INV);
@@ -308,7 +308,7 @@ describe('maker-checker (BR-09, Rule-06)', () => {
       await seedToMatchedInvoice(as);
       await cc.approveInvoice(as(RAJESH), INV);
 
-      const supplierQueue = JSON.parse(await cc.listPendingApprovals(as(SURESH, 'SupplierMSP')));
+      const supplierQueue = JSON.parse(await cc.listPendingApprovals(as(SURESH, 'SupplierMSP'), ''));
       expect(supplierQueue).to.have.lengthOf(0);
     });
 
