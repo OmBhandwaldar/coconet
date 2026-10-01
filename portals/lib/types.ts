@@ -126,3 +126,18 @@ export interface BankPayment {
   initiated_at: string;
   credited_at?: string;
 }
+
+export interface ApprovalRecord {
+  tx_type: string;
+  entity_id: string;
+  org_id: string;
+  status: string;
+  maker_id: string;
+  maker_msp?: string;
+  checker_id?: string;
+  created_at: string;
+  /** Present only when the viewer is entitled to the figures. */
+  amount?: number;
+  threshold?: number;
+  reason?: string;
+}

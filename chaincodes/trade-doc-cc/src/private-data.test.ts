@@ -2,6 +2,7 @@ import * as chai from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { TradeDocChaincode } from './trade-doc.chaincode';
+import { approvalStub } from './approval-stub';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -25,10 +26,19 @@ function makeCtx(state: Record<string, Buffer> = {}, opts: { msp?: string; trans
     getTransient: sinon.stub().returns(transientMap),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
+    // The maker-checker gate (BR-09) runs on every write path: composite keys
+    // for the approval ledger, a range query for the queue, and onboarding-cc
+    // for the approving org. Thresholds default high here — these suites are
+    // about the documents, not the signatures; maker-checker.test.ts is where
+    // the gate itself is exercised.
+    ...approvalStub(state, () => opts.msp ?? 'PlatformMSP'),
   };
   return {
     stub,
-    clientIdentity: { getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP') },
+    clientIdentity: {
+      getMSPID: sinon.stub().returns(opts.msp ?? 'PlatformMSP'),
+      getID: sinon.stub().returns(`x509::CN=${opts.msp ?? 'PlatformMSP'}-user`),
+    },
     __private: priv,
     __setTransient: (v: unknown) => transientMap.set('payload', Buffer.from(JSON.stringify(v))),
   } as any;
@@ -55,9 +65,15 @@ const figures = {
 
 const cc = new TradeDocChaincode();
 
-async function create(ctx: any, overrides: Record<string, unknown> = {}) {
+async function draft(ctx: any, overrides: Record<string, unknown> = {}) {
   ctx.__setTransient({ ...figures, ...overrides });
   return cc.createPO(ctx, JSON.stringify(po));
+}
+
+/** Create and issue — one signature, since these fixtures are below threshold. */
+async function create(ctx: any, overrides: Record<string, unknown> = {}) {
+  await draft(ctx, overrides);
+  return cc.issuePO(ctx, po.po_id);
 }
 
 describe('trade-doc-cc private data', () => {

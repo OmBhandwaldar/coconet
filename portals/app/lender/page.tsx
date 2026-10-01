@@ -6,6 +6,7 @@ import { Pipeline, type Stage } from '@/components/Pipeline';
 import { ActionButton, ActionCard, Field, inputCls, inrUsd, usd } from '@/components/ui';
 import { DocButton } from '@/components/DocViewer';
 import { PageHeader, EmptyDeal, ResultBanner } from '@/components/workspace';
+import { ApprovalQueue } from '@/components/ApprovalQueue';
 import { apiCall, apiGet, actAs } from '@/lib/api';
 
 // This screen acts as amit (HDFC relationship manager). The API restricts each action to the
@@ -261,6 +262,9 @@ export default function LenderPage() {
           onInitiated={(p) => apiCall('PUT', `/api/finance/${ids.frDisc}/disburse`, { disbursement_ref: p.utr, pre_shipment_request_id: ids.frPre })}
         />
 
+
+        {/* A credit decision needs the credit head as well as the RM (BR-09). */}
+        <ApprovalQueue checker="nandita" checkerName="Nandita, Credit Head" />
       </motion.div>
     </AppShell>
   );

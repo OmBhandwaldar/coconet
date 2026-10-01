@@ -1,4 +1,5 @@
 import { Context, Contract, Info, Returns, Transaction } from 'fabric-contract-api';
+import { gate, listPending, pendingFor, pendingResponse, read as readApproval, reject } from './maker-checker';
 
 // Same channel as trade-doc-cc; cross-chaincode calls stay in-channel.
 const CHANNEL = 'buyer-supplier-channel';
@@ -225,16 +226,40 @@ export class FinanceChaincode extends Contract {
     return JSON.stringify(fr);
   }
 
-  // Maker-checker is storage-only until Ring 11; this records the approved amount.
+  /**
+   * The lender commits to a facility amount — the one gated transition that
+   * carries a figure rather than only moving a status (BR-09, Rule-06).
+   *
+   * The maker's amount is stored with the approval record and replayed from
+   * storage when the checker signs, so the checker cannot sign off one figure
+   * and commit another. The checker therefore sends no transient data at all,
+   * which is why the payload is read optionally here.
+   */
   @Transaction()
   async approveFinancing(ctx: Context, requestId: string): Promise<string> {
     const fr = await this.getFR(ctx, requestId);
     this.assertParty(ctx, fr.party_msps, `finance request ${requestId}`);
     if (fr.status !== 'Offered') throw new Error(`Cannot approve a request in status ${fr.status}`);
-    const priv = this.transientPayload<Partial<FinancePrivate>>(ctx);
-    const amount = Number(priv.approved_amount);
-    if (!Number.isFinite(amount) || amount <= 0) throw new Error(`Invalid approved amount: ${priv.approved_amount}`);
-    fr.approved_amount = amount;
+    if (!fr.lender_id) throw new Error(`Finance request ${requestId} has no lender to approve it`);
+
+    // A maker must state the figure; a checker must not have to. Which call
+    // this is decides whether the transient payload is required, so the pending
+    // record is read first — demanding a payload up front would reject the
+    // second signature, and defaulting the amount to zero would let an empty
+    // body through the gate as a sub-threshold approval of nothing.
+    const pending = await pendingFor(ctx, 'FINANCE_APPROVE', requestId);
+    const proposed = pending ? 0 : this.requireProposedAmount(ctx);
+    const decision = await gate<{ approved_amount: number }>(ctx, {
+      txType: 'FINANCE_APPROVE',
+      entityId: requestId,
+      orgId: fr.lender_id,
+      amount: proposed,
+      proposed: { approved_amount: proposed },
+    });
+    if (!decision.proceed) return pendingResponse(decision.approval);
+    if (!decision.payload) throw new Error(`No approved amount recorded for ${requestId}`);
+
+    fr.approved_amount = decision.payload.approved_amount;
     fr.updated_at = this.txTimestamp(ctx);
     await this.persistIndex(ctx, fr);
     await this.persistPrivate(ctx, fr);
@@ -337,7 +362,41 @@ export class FinanceChaincode extends Contract {
   // ─── Helpers ──────────────────────────────────────────────────────────────
   // Canonical payload lives in the platform org's implicit collection — the
   // custody decision in PRIVACY-DESIGN.md §2.2.1.
+  // ═══ Approval queue (BR-09) ═════════════════════════════════════════════════
+
+  @Transaction()
+  async rejectApproval(ctx: Context, txType: string, entityId: string, reason: string): Promise<string> {
+    return reject(ctx, txType, entityId, reason);
+  }
+
+  @Transaction(false)
+  @Returns('string')
+  async getApproval(ctx: Context, txType: string, entityId: string): Promise<string> {
+    return readApproval(ctx, txType, entityId);
+  }
+
+  @Transaction(false)
+  @Returns('string')
+  // orgId is required rather than defaulted: fabric-contract-api infers each
+  // parameter's type from decorator metadata, and a default makes it emit
+  // "Type not properly specified for parameter orgId" and refuse to start.
+  // Callers pass '' for "no filter".
+  async listPendingApprovals(ctx: Context, orgId: string): Promise<string> {
+    return listPending(ctx, orgId || undefined);
+  }
+
+  // ─── Helpers ──────────────────────────────────────────────────────────────
   private readonly PRIVATE_COLLECTION = '_implicit_org_PlatformMSP';
+
+  /** The figure a maker is proposing. Required — only a checker may omit it. */
+  private requireProposedAmount(ctx: Context): number {
+    const { approved_amount } = this.transientPayload<Partial<FinancePrivate>>(ctx);
+    const amount = Number(approved_amount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new Error(`Invalid approved amount: ${approved_amount}`);
+    }
+    return amount;
+  }
 
   private transientPayload<T>(ctx: Context, key = 'payload'): T {
     const raw = ctx.stub.getTransient()?.get(key);

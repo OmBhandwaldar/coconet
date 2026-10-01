@@ -1,6 +1,7 @@
 import * as chai from 'chai';
 import sinon from 'sinon';
 import { FinanceChaincode } from './finance.chaincode';
+import { approvalStub } from './approval-stub';
 
 const { expect } = chai;
 
@@ -15,6 +16,7 @@ const ALLOWED_KEYS = new Set([
   'lender_id',                       // party org id
   'status',                          // state-machine position
   'failed_checks',                   // eligibility check names, never the reasons text
+  'tx_type', 'entity_id', 'org_id',  // maker-checker: WHAT needs approving, never its value
 ]);
 
 function collectKeys(value: unknown, into: string[] = []): string[] {
@@ -29,15 +31,26 @@ function collectKeys(value: unknown, into: string[] = []): string[] {
   return into;
 }
 
-function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unknown> = {}) {
-  const invokeChaincode = sinon.stub().callsFake(async (_cc: string, args: string[]) => {
+function makeCtx(
+  state: Record<string, Buffer> = {},
+  cross: Record<string, unknown> = {},
+  opts: { user?: string; thresholds?: Record<string, number>; priv?: Record<string, Buffer> } = {},
+) {
+  // The maker-checker gate (BR-09) reads onboarding-cc for the approving org on
+  // every gated write. Thresholds default high here — these suites are about
+  // the financing rules, not the signatures; maker-checker.test.ts drives those.
+  // The approving org defaults to the caller's own, since the gate admits only
+  // that organisation's users. These suites call as the platform throughout.
+  const approvals = approvalStub(state, () => 'PlatformMSP', { thresholds: opts.thresholds });
+  const invokeChaincode = sinon.stub().callsFake(async (ccName: string, args: string[]) => {
+    if (ccName === 'onboarding-cc') return approvals.invokeChaincode(ccName, args);
     const fn = args[0];
     if (Object.prototype.hasOwnProperty.call(cross, fn)) {
       return { status: 200, payload: Buffer.from(JSON.stringify(cross[fn])) };
     }
     return { status: 200, payload: Buffer.from('') };
   });
-  const priv: Record<string, Buffer> = {};
+  const priv: Record<string, Buffer> = opts.priv ?? {};
   const transientMap = new Map<string, Buffer>();
   const stub = {
     getPrivateData: sinon.stub().callsFake(async (_c: string, key: string) => priv[key] ?? Buffer.alloc(0)),
@@ -48,9 +61,13 @@ function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unkno
     deleteState: sinon.stub().callsFake(async (key: string) => { delete state[key]; }),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
+    ...approvals,
     invokeChaincode,
   };
-  return { ctx: { stub, clientIdentity: { getMSPID: sinon.stub().returns('PlatformMSP') },
+  return { ctx: { stub, clientIdentity: {
+      getMSPID: sinon.stub().returns('PlatformMSP'),
+      getID: sinon.stub().returns(opts.user ?? 'x509::CN=platform-user'),
+    },
     __private: priv,
     __setTransient: (v: unknown) => transientMap.set('payload', Buffer.from(JSON.stringify(v))) } as any };
 }
@@ -140,6 +157,48 @@ describe('finance-cc event payload contract', () => {
     await disburse(ctx, disc.request_id, 'NEFT-REF-1', 12077466);
     await repay(ctx, disc.request_id, 24750000, 'UTR-1');
     assertNoCommercialData(emitted(ctx));
+  });
+
+  // The gated path emits three further events, and the figure under approval is
+  // above a threshold by definition — the likeliest place for an amount to be
+  // attached "so the queue can show it".
+  it('emits no commercial data when an approval is parked, granted or refused', async () => {
+    const state: Record<string, Buffer> = {};
+    const priv: Record<string, Buffer> = {};
+    const gated = { FINANCE_APPROVE: 5000000 };
+    const desk = (user: string) =>
+      makeCtx(state, { getInvoice: financeableInvoice }, { user, thresholds: gated, priv }).ctx;
+    const amit = desk('id:amit');
+    const nandita = desk('id:nandita');
+
+    await createFR(amit, disc);
+    await cc.validateEligibility(amit, disc.request_id);
+    await cc.assignLender(amit, disc.request_id, 'hdfc-001');
+    await quote(amit, disc.request_id, { discount_rate: 0.02, tenor_days: 60 });
+    await approve(amit, disc.request_id, 24255000);
+    expect(emitted(amit).map((e) => e.name),
+      'the gate must actually fire for this guard to mean anything')
+      .to.include('ApprovalRequested');
+
+    await cc.approveFinancing(nandita, disc.request_id);
+    expect(emitted(nandita).map((e) => e.name)).to.include('ApprovalGranted');
+    assertNoCommercialData([...emitted(amit), ...emitted(nandita)]);
+
+    // And the refusal path, on a second request, whose reason is free text a
+    // human wrote and can name any figure.
+    const other = { ...disc, request_id: 'FR-DISC-002', asset_id: 'BS-INV-2024-1103' };
+    const maker = desk('id:amit');
+    await createFR(maker, other);
+    await cc.validateEligibility(maker, other.request_id);
+    await cc.assignLender(maker, other.request_id, 'hdfc-001');
+    await quote(maker, other.request_id, { discount_rate: 0.02, tenor_days: 60 });
+    await approve(maker, other.request_id, 17400000);
+
+    const refuser = desk('id:nandita');
+    await cc.rejectApproval(refuser, 'FINANCE_APPROVE', other.request_id,
+      'exposure over 2.4cr on this buyer');
+    expect(emitted(refuser).map((e) => e.name)).to.include('ApprovalRejected');
+    assertNoCommercialData([...emitted(maker), ...emitted(refuser)]);
   });
 
   // Eligibility failure builds free-text reasons. They carry ids today, but free

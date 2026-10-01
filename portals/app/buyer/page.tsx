@@ -7,6 +7,7 @@ import { ActionButton, ActionCard, Field, inputCls, inrUsd, usd } from '@/compon
 import { DocButton } from '@/components/DocViewer';
 import { DocUpload } from '@/components/DocUpload';
 import { PageHeader, EmptyDeal, ResultBanner, UploadChip, MatchAlert } from '@/components/workspace';
+import { ApprovalQueue } from '@/components/ApprovalQueue';
 import { apiCall, apiGet, apiSeq, parseFile, actAs } from '@/lib/api';
 
 // This screen acts as rajesh (Tata procurement). The API restricts each action to the
@@ -96,7 +97,7 @@ export default function BuyerPage() {
   const released = esc?.status === 'Released';
 
   const stages: Stage[] = [
-    { label: 'Order', state: po ? 'done' : 'active' },
+    { label: 'Order', state: po && po.status !== 'Draft' ? 'done' : 'active' },
     { label: 'Delivery', state: grn ? 'done' : po ? 'active' : 'todo' },
     { label: 'Invoice', state: invReady ? 'done' : inv?.status === 'Matched' ? 'active' : 'todo' },
     { label: 'Escrow', state: (esc && esc.status !== 'None') ? 'done' : invReady ? 'active' : 'todo' },
@@ -118,11 +119,12 @@ export default function BuyerPage() {
           title="Purchase Order"
           desc="Raise the order to your supplier, type the details or upload a PO to parse them."
           status={po?.status}
-          done={!!po}
+          done={!!po && po.status !== 'Draft'}
         >
           {po ? (
             <p className="text-sm text-slate-600">
               <span className="font-semibold text-ink">{po.quantity?.toLocaleString('en-IN')} × {po.item_description}</span> = {inrUsd(po.gross_value)}.
+              {po.status === 'Draft' && ' Drafted — issuing it commits you to the order, so it needs a second signature.'}
             </p>
           ) : (
             <div className="space-y-3">
@@ -147,6 +149,8 @@ export default function BuyerPage() {
                 item_description: item, delivery_terms: '45 days', payment_terms: '30 days',
                 doc_hash: poDocHash ?? `po-${code}`,
               })} onDone={refresh} />
+            <ActionButton label="Issue PO" icon={<IconArrowRight size={16} />} disabled={po?.status !== 'Draft'}
+              run={() => apiCall('PUT', `/api/trade-docs/purchase-orders/${ids.po}/issue`)} onDone={refresh} />
             <DocButton doc={po ? { kind: 'PO', data: po } : null} label="View PO" />
           </div>
         </ActionCard>
@@ -283,6 +287,9 @@ export default function BuyerPage() {
           {esc?.status === 'Refunded' && <ResultBanner tone="bad">Refunded to buyer.</ResultBanner>}
         </ActionCard>
         </>)}
+
+        {/* The checker's side of every gated action on this screen (BR-09). */}
+        <ApprovalQueue checker="priya" checkerName="Priya, Senior Procurement Head" />
       </motion.div>
     </AppShell>
   );

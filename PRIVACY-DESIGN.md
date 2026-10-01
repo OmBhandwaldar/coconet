@@ -533,6 +533,25 @@ record. It is a reasonable answer for a pilot and a poor one to be caught out by
 
 ---
 
+### 11.2 A refused approval closes the entity, not just the attempt
+
+Approval records are keyed `(tx_type, entity_id)`, so there is one per entity
+per transaction type. A checker's refusal therefore blocks any further proposal
+on that entity: a PO whose issue was refused stays in `Draft` for good, and a
+financing request whose approval was refused needs a new request.
+
+This is the conservative reading, chosen because the alternative — letting a new
+proposal overwrite the record — erases the only evidence of who refused and why,
+which NFR-05 exists to preserve. The cost is that a refusal made in error cannot
+be retried on the same document.
+
+**Upgrade path:** make the key attempt-scoped, `(tx_type, entity_id, attempt)`,
+so each cycle keeps its own record and the queue reads the latest. Nothing built
+here is discarded by taking that later; `listPendingApprovals` already range-scans
+the composite key.
+
+---
+
 ## 12. Decision log
 
 Every decision taken on this architecture, newest last. Entries here are **decided** — see §9 for
@@ -560,6 +579,17 @@ what remains open.
 | 17 | 1 Oct 2026 | **Indexes are rebuilt field by field, never spread from the merged view.** | §2.1 | Spreading publishes the payload the collection exists to hide, and a field added later leaks silently. Two real leaks were shipped this way before the rule was adopted. |
 | 18 | 1 Oct 2026 | **The activity feed is scoped to the viewer's own deals.** | §3.2 | Payloads no longer carry figures, but a global feed still reveals who trades with whom and how often. |
 | 19 | 1 Oct 2026 | **Organisation risk tier and maker-checker thresholds are private**, visible to the platform and the organisation itself. | §2.1 | Removing them from events and redacting them in the API left them in channel state, which every member's peer reads directly. |
+
+| 20 | 1 Oct 2026 | **The approval record is split like every other entity**: who must sign is public, the amount under approval and the threshold it breached are private. | §2.1 | An approval record with a public amount would announce the value of every large deal — the leak §1.1 exists to close, reintroduced through the audit trail. Verified live: a non-party lender reads the signers, not the ₹2.5cr. |
+| 21 | 1 Oct 2026 | **Checker ≠ maker is asserted on X.509 identity**, `ctx.clientIdentity.getID()`, not on MSP. | §2.1 | Two users of the same organisation are the point; comparing MSPs would compare a value equal by construction. This is what Block 3's per-caller gateway was built for. |
+| 22 | 1 Oct 2026 | **A parked transition returns a pending result; it does not throw.** The API answers 202. | §2.1 | Fabric has no way to write state and abort — a thrown error would roll back the approval record along with the transition, so the gate must return and the caller must distinguish the two shapes. |
+| 23 | 1 Oct 2026 | **The checker commits the maker's figure, replayed from the approval record.** | §2.1 | Otherwise maker-checker counts signatures without constraining what was signed: a checker could approve one amount and commit another. The checker sends no transient data at all. |
+| 24 | 1 Oct 2026 | **An unset threshold is zero — everything needs two signatures — and a failed threshold lookup aborts the transition.** | §2.1 | Fails closed. A forgotten configuration becomes loud rather than permissive, and an unreachable onboarding-cc cannot downgrade a transition to one signature. |
+| 25 | 1 Oct 2026 | **Entitlement to an organisation's thresholds is the authority to act on its behalf.** | §2.1 | `getOrganization` returns thresholds only to the org itself or the platform (decision 19), so their absence is the access decision. A supplier can no longer approve the invoice it raised. |
+
+| 26 | 1 Oct 2026 | **The platform may not countersign another organisation's decision.** It signs only where it is itself the approving org. | §2.1, §11.1 | The one place PlatformMSP is *not* admitted. Elsewhere it is, because it custodies the data and endorses everything — but a second signature exists so two people inside the buyer or lender agree, and the operator is not one of them. |
+| 27 | 1 Oct 2026 | **A refused approval cannot be re-proposed** on the same entity; raise a new one. | §2.1 | The Rejected record is the only place the refusal and its reason exist (NFR-05), and a re-proposal overwrote it. See §11.2 for the cost and the upgrade path. |
+| 28 | 1 Oct 2026 | **An approved cycle cannot be re-run.** | §2.1 | Normally the entity's own state machine rejects the replay; `approveFinancing` leaves the request at `Offered`, so without this the gate was the only thing stopping a lender rewriting an agreed facility on one signature. |
 
 **Keep this current.** Any decision that changes data placement, endorsement, or what a non-party can
 see gets a row here on the same commit that implements it.

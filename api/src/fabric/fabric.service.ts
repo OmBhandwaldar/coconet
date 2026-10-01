@@ -18,6 +18,29 @@ function parseResult(bytes: Uint8Array): unknown {
   }
 }
 
+/**
+ * The message the chaincode actually threw, not the gateway's summary of it.
+ *
+ * A failed endorsement surfaces as "failed to collect enough transaction
+ * endorsements", with each peer's real reason in `details`. That is useless to
+ * a caller: a maker who tries to approve their own proposal deserves to read
+ * "a checker must be a different user", not a gRPC status. The peers' messages
+ * agree in the cases we care about, so the first distinct one is the answer.
+ */
+function chaincodeMessage(err: unknown): string {
+  const summary = err instanceof Error ? err.message : String(err);
+  const details = (err as { details?: unknown }).details;
+  if (!Array.isArray(details)) return summary;
+
+  const reasons = [...new Set(
+    details
+      .map((d) => (d && typeof d === 'object' ? String((d as { message?: unknown }).message ?? '') : ''))
+      .map((m) => m.trim())
+      .filter(Boolean),
+  )];
+  return reasons.length ? reasons.join('; ') : summary;
+}
+
 async function withContract<T>(
   ccName: string,
   fn: string,
@@ -28,7 +51,7 @@ async function withContract<T>(
     const bytes = await op(contract);
     return parseResult(bytes) as T;
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = chaincodeMessage(err);
     logger.error({ chaincode: ccName, fn, err: message }, 'Fabric call failed');
     throw new FabricError(ccName, fn, message, err);
   }

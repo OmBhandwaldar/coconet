@@ -5,6 +5,13 @@ export interface ApiResult<T = any> {
   data?: T;
   error?: { code?: string; message?: string };
   status: number;
+  /**
+   * The call succeeded but the transition is waiting for a second signature
+   * (BR-09). It arrives as a 202, because the chaincode cannot throw when it
+   * parks a transition without rolling back the approval record it just wrote —
+   * so a screen that only checks `ok` would show the action as complete.
+   */
+  pending?: boolean;
 }
 
 // ─── Demo authentication ──────────────────────────────────────────────────────
@@ -41,10 +48,21 @@ async function tokenFor(username: string): Promise<string | null> {
 }
 
 export async function apiCall<T = any>(method: string, path: string, body?: unknown): Promise<ApiResult<T>> {
+  return apiCallAs(actor, method, path, body);
+}
+
+/**
+ * One call as somebody other than the screen's own actor — what a checker needs.
+ * A screen declares a single actor with actAs(), but an approval queue is by
+ * definition acted on by a second person in the same organisation.
+ */
+export async function apiCallAs<T = any>(
+  username: string, method: string, path: string, body?: unknown,
+): Promise<ApiResult<T>> {
   try {
     const headers: Record<string, string> = {};
     if (body) headers['content-type'] = 'application/json';
-    const token = await tokenFor(actor);
+    const token = await tokenFor(username);
     if (token) headers.authorization = `Bearer ${token}`;
 
     const res = await fetch(`${BASE}${path}`, {
@@ -55,7 +73,10 @@ export async function apiCall<T = any>(method: string, path: string, body?: unkn
     let json: any = {};
     try { json = await res.json(); } catch { /* empty body */ }
     const ok = res.ok && json.success !== false;
-    return { ok, data: json.data as T, error: json.error, status: res.status };
+    return {
+      ok, data: json.data as T, error: json.error, status: res.status,
+      pending: json.pending_approval === true,
+    };
   } catch (e: any) {
     return { ok: false, error: { message: e?.message ?? 'Network error' }, status: 0 };
   }

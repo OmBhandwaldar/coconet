@@ -381,7 +381,7 @@ full version.
 - **One combined `trade-doc-cc` contract** (PO + GRN + Invoice + 3-way match), mirroring onboarding-cc. 3-way match reads all three in one tx — avoids cross-contract reads.
 - **MinIO document upload included now**; SHA-256 fingerprint on-chain (FR-DOC-02), raw doc in MinIO.
 - **GRN minimal** (create + accept only); inspection sub-states deferred.
-- **PO created directly as `Issued`**; maker-checker is storage-only until Ring 11.
+- ~~**PO created directly as `Issued`**; maker-checker is storage-only until Ring 11.~~ — **Done**, [NEW-PLAN.md](NEW-PLAN.md) Block 5. A PO is now born `Draft` and `issuePO` is the signed act; four transitions are gated on the approving org's threshold.
 
 ### Block 4 — Finance (pre-shipment + invoice discounting)
 - **Rule-01 enforced via cross-chaincode read**: `finance-cc` calls `invokeChaincode('trade-doc-cc', getInvoice/getPurchaseOrder)` to verify status on-chain (not trusting API-passed data).

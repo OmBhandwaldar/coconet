@@ -1,6 +1,7 @@
 import * as chai from 'chai';
 import sinon from 'sinon';
 import { FinanceChaincode } from './finance.chaincode';
+import { approvalStub } from './approval-stub';
 
 const { expect } = chai;
 
@@ -37,11 +38,14 @@ function makeNetwork() {
       getTransient: sinon.stub().returns(transientMap),
       setEvent: sinon.stub(),
       getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
-      invokeChaincode: sinon.stub().callsFake(async () => ({ status: 200, payload: Buffer.from('') })),
+      ...approvalStub(state, () => msp),
     };
     return {
       stub,
-      clientIdentity: { getMSPID: sinon.stub().returns(msp) },
+      clientIdentity: {
+        getMSPID: sinon.stub().returns(msp),
+        getID: sinon.stub().returns(`x509::CN=${msp}-user`),
+      },
       __setTransient: (v: unknown) => transientMap.set('payload', Buffer.from(JSON.stringify(v))),
       __publicState: state,
     } as any;

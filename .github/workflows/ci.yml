@@ -32,7 +32,9 @@ jobs:
       # CI will not run a command that is known broken.
 
       # Chaincode unit tests (mocha). These include the event payload guards
-      # from Block 1 — a commercial field added to an event fails the build.
+      # from Block 1 — a commercial field added to an event fails the build —
+      # and the Block 5 guard that the two copies of the maker-checker gate have
+      # not drifted, which is why trade-doc-cc's suite reads finance-cc's source.
       - name: Chaincode tests
         run: |
           npm test --workspace=@coconet/onboarding-cc

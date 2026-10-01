@@ -114,12 +114,16 @@ export function ActionButton({
 }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
 
   async function click() {
-    setBusy(true); setErr(null);
+    setBusy(true); setErr(null); setNote(null);
     const r = await run();
     setBusy(false);
     if (!r.ok) setErr(r.error?.message ?? `Failed (${r.status})`);
+    // A 202 means the action was recorded but is waiting for a second
+    // signature (BR-09). Saying nothing would read as "done".
+    else if (r.pending) setNote('Sent for approval — a checker in your organisation must countersign.');
     onDone?.();
   }
 
@@ -139,6 +143,7 @@ export function ActionButton({
         {busy ? 'Working…' : label}
       </motion.button>
       {err && <p className="max-w-xs text-xs leading-snug text-rose-600">{err}</p>}
+      {note && <p className="max-w-xs text-xs leading-snug font-medium text-amber-600">{note}</p>}
     </div>
   );
 }

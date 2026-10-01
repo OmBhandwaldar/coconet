@@ -96,6 +96,51 @@ describe('fabric.service', () => {
       expect(contract.submitTransaction).not.toHaveBeenCalled();
     });
 
+    // A failed endorsement arrives as "failed to collect enough transaction
+    // endorsements", with each peer's real reason in `details`. Surfacing only
+    // the summary told a maker who tried to approve their own proposal nothing
+    // at all — which is how this surfaced, in the maker-checker demo.
+    it('surfaces the chaincode message behind an endorsement failure', async () => {
+      const endorseError = Object.assign(
+        new Error('10 ABORTED: failed to collect enough transaction endorsements'),
+        {
+          details: [
+            { address: 'peer0.platform:10051', mspId: 'PlatformMSP',
+              message: 'PO_ISSUE on PO-1 was proposed by this identity — a checker must be a different user (BR-09)' },
+          ],
+        },
+      );
+      const contract = mockContract({ evaluate: async () => { throw endorseError; } });
+      vi.spyOn(gateway, 'getContract').mockReturnValue(contract);
+
+      const err = await query('trade-doc-cc', 'issuePO', 'PO-1').catch((e: unknown) => e);
+      expect((err as FabricError).message).toMatch(/a checker must be a different user/);
+    });
+
+    it('de-duplicates identical reasons from several peers', async () => {
+      const endorseError = Object.assign(new Error('failed to collect enough endorsements'), {
+        details: [
+          { mspId: 'PlatformMSP', message: 'not a party to invoice INV-1' },
+          { mspId: 'BuyerMSP', message: 'not a party to invoice INV-1' },
+        ],
+      });
+      const contract = mockContract({ evaluate: async () => { throw endorseError; } });
+      vi.spyOn(gateway, 'getContract').mockReturnValue(contract);
+
+      const err = await query('trade-doc-cc', 'getInvoice', 'INV-1').catch((e: unknown) => e);
+      expect((err as FabricError).message).toMatch(/Fabric trade-doc-cc.getInvoice: not a party to invoice INV-1$/);
+    });
+
+    it('falls back to the summary when there are no details', async () => {
+      const contract = mockContract({
+        evaluate: async () => { throw new Error('peer unreachable'); },
+      });
+      vi.spyOn(gateway, 'getContract').mockReturnValue(contract);
+
+      const err = await query('trade-doc-cc', 'getInvoice', 'INV-1').catch((e: unknown) => e);
+      expect((err as FabricError).message).toMatch(/peer unreachable/);
+    });
+
     it('wraps not-found errors in FabricError', async () => {
       const contract = mockContract({
         evaluate: async () => { throw new Error('Organization missing-001 not found'); },

@@ -200,7 +200,13 @@ export class OnboardingChaincode extends Contract {
     return JSON.stringify({ ...org, ...priv });
   }
 
-  // ─── BR-09 / Rule-06: Maker-checker thresholds (storage only — Ring 11 enforces) ──
+  // ─── BR-09 / Rule-06: Maker-checker thresholds ────────────────────────────
+  // Read by trade-doc-cc and finance-cc on every gated write, cross-chaincode,
+  // via getOrganization — which discloses them only to the organisation itself
+  // or the platform, so entitlement here is the authority to act on that
+  // organisation's behalf. An unset threshold is 0, meaning two signatures for
+  // everything: the safe reading, and the one that makes a forgotten
+  // configuration loud rather than permissive.
   @Transaction()
   async setMakerCheckerThreshold(
     ctx: Context,

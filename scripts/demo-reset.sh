@@ -46,19 +46,21 @@ bash scripts/setup-channel.sh
 
 step "Deploying chaincodes (fresh channel → sequence 1)..."
 # onboarding-cc holds the risk tier and maker-checker thresholds privately, so
-# it needs the same custodian-endorsed policy as the other two.
+# it needs the same custodian-endorsed policy as the other two. Since Block 5
+# the other two cross-read it for the approving org on every gated write, which
+# is one more reason all three policies must agree.
 bash scripts/deploy-chaincode.sh --name onboarding-cc --dir onboarding-cc --version 2.0 --sequence 1 \
   --signature-policy "OR('PlatformMSP.member')"
 # trade-doc-cc writes private data to the platform org's implicit collection, and
 # only that org can endorse such a write — so a majority-of-orgs policy could
 # never commit. PRIVACY-DESIGN.md §2.2.1 explains why the canonical copy lives
 # there; the centralisation this implies is recorded in §3.6.
-bash scripts/deploy-chaincode.sh --name trade-doc-cc  --dir trade-doc-cc  --version 2.0 --sequence 1 \
+bash scripts/deploy-chaincode.sh --name trade-doc-cc  --dir trade-doc-cc  --version 3.1 --sequence 1 \
   --signature-policy "OR('PlatformMSP.member')"
 # finance-cc cross-invokes trade-doc-cc (the atomic Rule-02 lien lock), so a
 # transaction must satisfy both chaincodes' policies. They therefore have to
 # agree — see PRIVACY-DESIGN.md §3.6 for the centralisation this implies.
-bash scripts/deploy-chaincode.sh --name finance-cc    --dir finance-cc    --version 1.1 --sequence 1 \
+bash scripts/deploy-chaincode.sh --name finance-cc    --dir finance-cc    --version 3.1 --sequence 1 \
   --signature-policy "OR('PlatformMSP.member')"
 
 step "Deploying Polygon contracts (USDC + EscrowVault + EscrowFactory)..."

@@ -1,6 +1,7 @@
 import { env } from '../config/env.js';
 import { invoke, invokeWithTransient, query } from '../fabric/fabric.service.js';
 import { newSalt, partyMsps } from '../fabric/private-data.js';
+import type { Gated } from './approvals.service.js';
 import type { CreatePOInput, SubmitInvoiceInput } from '../validators/trade-doc.validator.ts';
 
 export type POStatus =
@@ -87,6 +88,15 @@ export async function createPO(input: CreatePOInput): Promise<PurchaseOrder> {
   };
   return invokeWithTransient<PurchaseOrder>(cc, 'createPO', [JSON.stringify(index)], payload);
 }
+/**
+ * Draft → Issued, the act that commits the buyer and therefore the act
+ * maker-checker gates (BR-09). Above the buyer's PO_ISSUE threshold the first
+ * call parks it and returns the pending record; a second user in the buyer's
+ * org completes it by calling this again.
+ */
+export async function issuePO(poId: string): Promise<Gated<PurchaseOrder>> {
+  return invoke<Gated<PurchaseOrder>>(cc, 'issuePO', poId);
+}
 export async function getPurchaseOrder(poId: string): Promise<PurchaseOrder> {
   return query<PurchaseOrder>(cc, 'getPurchaseOrder', poId);
 }
@@ -111,8 +121,8 @@ export async function createGRN(grnId: string, poId: string, receivedQty: number
     { received_qty: receivedQty, salt: newSalt() },
   );
 }
-export async function acceptGRN(grnId: string): Promise<GoodsReceipt> {
-  return invoke<GoodsReceipt>(cc, 'acceptGRN', grnId);
+export async function acceptGRN(grnId: string): Promise<Gated<GoodsReceipt>> {
+  return invoke<Gated<GoodsReceipt>>(cc, 'acceptGRN', grnId);
 }
 export async function getGRN(grnId: string): Promise<GoodsReceipt> {
   return query<GoodsReceipt>(cc, 'getGRN', grnId);
@@ -141,8 +151,8 @@ export async function reviseInvoice(invoiceId: string, amount: number, quantity:
 export async function getInvoice(invoiceId: string): Promise<Invoice> {
   return query<Invoice>(cc, 'getInvoice', invoiceId);
 }
-export async function approveInvoice(invoiceId: string): Promise<Invoice> {
-  return invoke<Invoice>(cc, 'approveInvoice', invoiceId);
+export async function approveInvoice(invoiceId: string): Promise<Gated<Invoice>> {
+  return invoke<Gated<Invoice>>(cc, 'approveInvoice', invoiceId);
 }
 export async function rejectInvoice(invoiceId: string, reason: string): Promise<Invoice> {
   return invoke<Invoice>(cc, 'rejectInvoice', invoiceId, reason);
