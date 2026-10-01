@@ -2,6 +2,7 @@ import * as chai from 'chai';
 import chaiAsPromised from 'chai-as-promised';
 import sinon from 'sinon';
 import { FinanceChaincode } from './finance.chaincode';
+import { approvalStub } from './approval-stub';
 
 chai.use(chaiAsPromised);
 const { expect } = chai;
@@ -9,7 +10,12 @@ const { expect } = chai;
 // Context mock. `cross` maps a trade-doc-cc function name → the object its query
 // should return; any other (write) cross-invoke defaults to status 200.
 function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unknown> = {}) {
-  const invokeChaincode = sinon.stub().callsFake(async (_cc: string, args: string[]) => {
+  // The maker-checker gate (BR-09) reads onboarding-cc for the approving org on
+  // every gated write. Thresholds default high here — these suites are about
+  // the financing rules, not the signatures; maker-checker.test.ts drives those.
+  const approvals = approvalStub(state, () => 'PlatformMSP', { orgMsp: 'LenderMSP' });
+  const invokeChaincode = sinon.stub().callsFake(async (ccName: string, args: string[]) => {
+    if (ccName === 'onboarding-cc') return approvals.invokeChaincode(ccName, args);
     const fn = args[0];
     if (Object.prototype.hasOwnProperty.call(cross, fn)) {
       return { status: 200, payload: Buffer.from(JSON.stringify(cross[fn])) };
@@ -27,9 +33,13 @@ function makeCtx(state: Record<string, Buffer> = {}, cross: Record<string, unkno
     deleteState: sinon.stub().callsFake(async (key: string) => { delete state[key]; }),
     setEvent: sinon.stub(),
     getTxTimestamp: sinon.stub().returns({ seconds: { low: 1735689600 }, nanos: 0 }),
+    ...approvals,
     invokeChaincode,
   };
-  return { ctx: { stub, clientIdentity: { getMSPID: sinon.stub().returns('PlatformMSP') },
+  return { ctx: { stub, clientIdentity: {
+      getMSPID: sinon.stub().returns('PlatformMSP'),
+      getID: sinon.stub().returns('x509::CN=platform-user'),
+    },
     __private: priv,
     __setTransient: (v: unknown) => transientMap.set('payload', Buffer.from(JSON.stringify(v))) } as any, invokeChaincode };
 }
