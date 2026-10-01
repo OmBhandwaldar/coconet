@@ -1,4 +1,5 @@
 import { Context, Contract, Info, Returns, Transaction } from 'fabric-contract-api';
+import { gate, listPending, pendingResponse, read as readApproval, reject } from './maker-checker';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 export type POStatus =
@@ -178,7 +179,9 @@ export class TradeDocChaincode extends Contract {
       supplier_id: input.supplier_id,
       party_msps: input.party_msps,
       doc_hash: input.doc_hash,
-      status: 'Issued', // maker-checker is storage-only until Block 5
+      // A PO is born a draft. Issuing it is the act that commits the buyer,
+      // so issuing is what maker-checker gates (BR-09) — see issuePO below.
+      status: 'Draft',
       amendment_count: 0,
       created_at: now,
       updated_at: now,
@@ -202,6 +205,38 @@ export class TradeDocChaincode extends Contract {
       status: index.status, doc_hash: index.doc_hash,
     })));
     return JSON.stringify({ ...index, ...payload });
+  }
+
+  /**
+   * Draft → Issued, the point at which the buyer is committed to the order.
+   *
+   * Above the buyer's PO_ISSUE threshold this needs two signatures: the first
+   * call parks the transition and returns the pending record, the second call
+   * by a different user in the buyer's org commits it.
+   */
+  @Transaction()
+  async issuePO(ctx: Context, poId: string): Promise<string> {
+    const po = await this.getPO(ctx, poId);
+    this.assertPOTransition(po.status, 'Issued');
+    if (po.gross_value === undefined) {
+      throw new Error(`Private payload for PO ${poId} is not readable on this peer`);
+    }
+
+    const decision = await gate(ctx, {
+      txType: 'PO_ISSUE',
+      entityId: poId,
+      orgId: po.buyer_id,
+      amount: po.gross_value,
+    });
+    if (!decision.proceed) return pendingResponse(decision.approval);
+
+    po.status = 'Issued';
+    po.updated_at = this.txTimestamp(ctx);
+    await this.persistPOIndex(ctx, po);
+    ctx.stub.setEvent('POIssued', Buffer.from(JSON.stringify({
+      po_id: poId, buyer_id: po.buyer_id, supplier_id: po.supplier_id, status: po.status,
+    })));
+    return JSON.stringify(po);
   }
 
   @Transaction()
@@ -335,6 +370,22 @@ export class TradeDocChaincode extends Contract {
 
     const priv = await this.getPrivate<GRNPrivate>(ctx, this.grnKey(grnId));
     if (!priv) throw new Error(`Private payload for GRN ${grnId} is not readable on this peer`);
+
+    // Accepting goods is the buyer's commitment that they arrived as ordered,
+    // and everything downstream — the 3-way match, financing eligibility,
+    // escrow release — rests on it. The value at stake is the order's, since a
+    // GRN carries quantities and no money of its own.
+    const po = await this.getPO(ctx, index.po_id);
+    if (po.gross_value === undefined) {
+      throw new Error(`Private payload for PO ${index.po_id} is not readable on this peer`);
+    }
+    const decision = await gate(ctx, {
+      txType: 'GRN_ACCEPT',
+      entityId: grnId,
+      orgId: po.buyer_id,
+      amount: po.gross_value,
+    });
+    if (!decision.proceed) return pendingResponse(decision.approval);
 
     index.status = 'Accepted';
     index.updated_at = this.txTimestamp(ctx);
@@ -530,6 +581,18 @@ export class TradeDocChaincode extends Contract {
     if (!invoice.match_result?.passed) {
       throw new Error(`Cannot approve invoice ${invoiceId}: 3-way match has not passed`);
     }
+    if (invoice.amount === undefined) {
+      throw new Error(`Private payload for invoice ${invoiceId} is not readable on this peer`);
+    }
+
+    const decision = await gate(ctx, {
+      txType: 'INVOICE_APPROVE',
+      entityId: invoiceId,
+      orgId: invoice.buyer_id,
+      amount: invoice.amount,
+    });
+    if (!decision.proceed) return pendingResponse(decision.approval);
+
     invoice.status = 'Approved';
     invoice.updated_at = this.txTimestamp(ctx);
     await this.persistInvoiceIndex(ctx, invoice);
@@ -595,6 +658,25 @@ export class TradeDocChaincode extends Contract {
     if (!this.isParty(ctx, index.party_msps)) return JSON.stringify(index);
     const priv = await this.getPrivate<InvoicePrivate>(ctx, this.invKey(invoiceId));
     return JSON.stringify({ ...index, ...(priv ?? {}) });
+  }
+
+  // ═══ Approval queue (BR-09) ═════════════════════════════════════════════════
+
+  @Transaction()
+  async rejectApproval(ctx: Context, txType: string, entityId: string, reason: string): Promise<string> {
+    return reject(ctx, txType, entityId, reason);
+  }
+
+  @Transaction(false)
+  @Returns('string')
+  async getApproval(ctx: Context, txType: string, entityId: string): Promise<string> {
+    return readApproval(ctx, txType, entityId);
+  }
+
+  @Transaction(false)
+  @Returns('string')
+  async listPendingApprovals(ctx: Context, orgId = ''): Promise<string> {
+    return listPending(ctx, orgId || undefined);
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
