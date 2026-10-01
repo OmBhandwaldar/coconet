@@ -22,7 +22,9 @@ const invoice1102 = { invoice_id: 'BS-INV-2024-1102', amount: 24750000, status: 
 
 beforeEach(() => {
   vi.spyOn(fabricService, 'invoke').mockResolvedValue(preFR);
-  vi.spyOn(fabricService, 'query').mockResolvedValue(preFR);
+  vi.spyOn(fabricService, 'query').mockImplementation(async (_cc: string, fn: string) =>
+    (fn === 'getOrganization' ? { msp_id: 'LenderMSP' } : preFR) as never,
+  );
 });
 afterEach(() => { vi.restoreAllMocks(); });
 

@@ -34,6 +34,7 @@ const preShip = {
   asset_id: 'TM-PO-2024-0892',
   requestor_org_id: 'bharat-001',
   lender_id: 'hdfc-001',
+  lender_msp: 'LenderMSP',
   requested_amount: 12000000,
 };
 
@@ -44,6 +45,7 @@ const disc = {
   asset_id: 'BS-INV-2024-1102',
   requestor_org_id: 'bharat-001',
   lender_id: 'hdfc-001',
+  lender_msp: 'LenderMSP',
   requested_amount: 24255000,
 };
 

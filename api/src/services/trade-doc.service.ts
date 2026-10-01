@@ -105,7 +105,11 @@ export async function fulfillPO(poId: string): Promise<PurchaseOrder> {
 
 // ─── Goods Receipt ──────────────────────────────────────────────────────────
 export async function createGRN(grnId: string, poId: string, receivedQty: number, docHash?: string): Promise<GoodsReceipt> {
-  return invoke<GoodsReceipt>(cc, 'createGRN', grnId, poId, String(receivedQty), docHash ?? '');
+  // Received quantity is a commercial figure: transient, with its own salt.
+  return invokeWithTransient<GoodsReceipt>(
+    cc, 'createGRN', [grnId, poId, docHash ?? ''],
+    { received_qty: receivedQty, salt: newSalt() },
+  );
 }
 export async function acceptGRN(grnId: string): Promise<GoodsReceipt> {
   return invoke<GoodsReceipt>(cc, 'acceptGRN', grnId);
@@ -116,13 +120,23 @@ export async function getGRN(grnId: string): Promise<GoodsReceipt> {
 
 // ─── Invoices ─────────────────────────────────────────────────────────────────
 export async function submitInvoice(input: SubmitInvoiceInput): Promise<Invoice> {
-  return invoke<Invoice>(cc, 'submitInvoice', JSON.stringify(input));
+  const {
+    invoice_id, supplier_id, buyer_id, po_id, grn_id, doc_hash,
+    amount, quantity, currency, due_date,
+  } = input as SubmitInvoiceInput & Record<string, unknown>;
+
+  const index = { invoice_id, supplier_id, buyer_id, po_id, grn_id, doc_hash };
+  const payload = { amount, quantity, currency: currency ?? 'INR', due_date, salt: newSalt() };
+  return invokeWithTransient<Invoice>(cc, 'submitInvoice', [JSON.stringify(index)], payload);
 }
 export async function runThreeWayMatch(invoiceId: string): Promise<Invoice> {
   return invoke<Invoice>(cc, 'runThreeWayMatch', invoiceId);
 }
 export async function reviseInvoice(invoiceId: string, amount: number, quantity: number, docHash?: string): Promise<Invoice> {
-  return invoke<Invoice>(cc, 'reviseInvoice', invoiceId, String(amount), String(quantity), docHash ?? '');
+  return invokeWithTransient<Invoice>(
+    cc, 'reviseInvoice', [invoiceId, docHash ?? ''],
+    { amount, quantity, salt: newSalt() },
+  );
 }
 export async function getInvoice(invoiceId: string): Promise<Invoice> {
   return query<Invoice>(cc, 'getInvoice', invoiceId);

@@ -43,17 +43,27 @@ export interface POPrivate {
 /** The merged view returned to an entitled caller. */
 export type PurchaseOrder = POIndex & Partial<POPrivate>;
 
-export interface GoodsReceipt {
+export interface GRNIndex {
   grn_id: string;
   po_id: string;
-  received_qty: number;
-  accepted_qty?: number;
+  party_msps: string[];
   doc_hash?: string;
   status: GRNStatus;
   created_at: string;
   updated_at: string;
 }
 
+export interface GRNPrivate {
+  received_qty: number;
+  accepted_qty?: number;
+  salt: string;
+}
+
+export type GoodsReceipt = GRNIndex & Partial<GRNPrivate>;
+
+// Outcome and per-check booleans stay public: finance-cc reads match_result.passed
+// across chaincodes to enforce Rule-01, and a boolean reveals nothing commercial.
+// `reasons` is free text built from both documents' figures, so it goes private.
 export interface MatchResult {
   passed: boolean;
   checks: {
@@ -62,20 +72,16 @@ export interface MatchResult {
     amount_within_po: boolean;
     qty_within_grn: boolean;
   };
-  reasons: string[];
   matched_at: string;
 }
 
-export interface Invoice {
+export interface InvoiceIndex {
   invoice_id: string;
   supplier_id: string;
   buyer_id: string;
   po_id: string;
   grn_id: string;
-  amount: number;
-  quantity: number;
-  currency: string;
-  due_date: string;
+  party_msps: string[];
   doc_hash: string;
   status: InvoiceStatus;
   match_result?: MatchResult;
@@ -84,6 +90,18 @@ export interface Invoice {
   created_at: string;
   updated_at: string;
 }
+
+export interface InvoicePrivate {
+  amount: number;
+  quantity: number;
+  currency: string;
+  due_date: string;
+  /** Free text naming both documents' figures — never public. */
+  match_reasons?: string[];
+  salt: string;
+}
+
+export type Invoice = InvoiceIndex & Partial<InvoicePrivate>;
 
 // ─── State machines ─────────────────────────────────────────────────────────
 const PO_TRANSITIONS: Record<POStatus, POStatus[]> = {
@@ -195,7 +213,7 @@ export class TradeDocChaincode extends Contract {
     this.assertPOTransition(po.status, 'Acknowledged');
     po.status = 'Acknowledged';
     po.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.poKey(poId), Buffer.from(JSON.stringify(po)));
+    await this.persistPOIndex(ctx, po);
     ctx.stub.setEvent('POAcknowledged', Buffer.from(JSON.stringify({ po_id: poId, supplier_id: supplierId })));
     return JSON.stringify(po);
   }
@@ -273,67 +291,88 @@ export class TradeDocChaincode extends Contract {
   // ═══ Goods Receipt (minimal) ════════════════════════════════════════════════
 
   @Transaction()
-  async createGRN(ctx: Context, grnId: string, poId: string, receivedQty: string, docHash: string): Promise<string> {
+  /** Received quantity is a commercial figure and arrives as transient data. */
+  async createGRN(ctx: Context, grnId: string, poId: string, docHash: string): Promise<string> {
     if (!grnId) throw new Error('grn_id is required');
-    const po = await this.getPO(ctx, poId); // validates PO exists
+    const priv = this.transientPayload<Partial<GRNPrivate>>(ctx);
+    const index = await this.getPOIndex(ctx, poId); // validates the PO exists
+    this.assertParty(ctx, index.party_msps, `GRN ${grnId}`);
+
     if (await this.exists(ctx, this.grnKey(grnId))) {
       throw new Error(`GRN ${grnId} already exists`);
     }
-    const qty = Number(receivedQty);
-    if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Invalid received_qty: ${receivedQty}`);
+    const qty = Number(priv.received_qty);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Invalid received_qty: ${priv.received_qty}`);
+    if (!priv.salt) throw new Error('salt is required — predictable private data is brute-forceable');
 
     const now = this.txTimestamp(ctx);
-    const grn: GoodsReceipt = {
+    // The GRN inherits the PO's party set — the same people are entitled to it.
+    const grnIndex: GRNIndex = {
       grn_id: grnId,
-      po_id: po.po_id,
-      received_qty: qty,
+      po_id: index.po_id,
+      party_msps: index.party_msps,
       doc_hash: docHash || undefined,
       status: 'Received',
       created_at: now,
       updated_at: now,
     };
+    const payload: GRNPrivate = { received_qty: qty, salt: priv.salt };
+
     if (docHash) await this.registerDocHash(ctx, docHash, 'GRN', grnId);
-    await ctx.stub.putState(this.grnKey(grnId), Buffer.from(JSON.stringify(grn)));
+    await ctx.stub.putState(this.grnKey(grnId), Buffer.from(JSON.stringify(grnIndex)));
+    await this.putPrivate(ctx, this.grnKey(grnId), payload);
     ctx.stub.setEvent('GRNCreated', Buffer.from(JSON.stringify({
-      grn_id: grnId, po_id: po.po_id, status: grn.status, doc_hash: grn.doc_hash,
+      grn_id: grnId, po_id: index.po_id, status: grnIndex.status, doc_hash: grnIndex.doc_hash,
     })));
-    return JSON.stringify(grn);
+    return JSON.stringify({ ...grnIndex, ...payload });
   }
 
   @Transaction()
   async acceptGRN(ctx: Context, grnId: string): Promise<string> {
-    const grn = await this.getGRNState(ctx, grnId);
-    if (grn.status !== 'Received') throw new Error(`Cannot accept GRN in status ${grn.status}`);
-    grn.status = 'Accepted';
-    grn.accepted_qty = grn.received_qty; // full acceptance (minimal GRN)
-    grn.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.grnKey(grnId), Buffer.from(JSON.stringify(grn)));
-    ctx.stub.setEvent('GRNAccepted', Buffer.from(JSON.stringify({ grn_id: grnId, status: grn.status })));
-    return JSON.stringify(grn);
+    const index = await this.getGRNIndex(ctx, grnId);
+    if (index.status !== 'Received') throw new Error(`Cannot accept GRN in status ${index.status}`);
+    this.assertParty(ctx, index.party_msps, `GRN ${grnId}`);
+
+    const priv = await this.getPrivate<GRNPrivate>(ctx, this.grnKey(grnId));
+    if (!priv) throw new Error(`Private payload for GRN ${grnId} is not readable on this peer`);
+
+    index.status = 'Accepted';
+    index.updated_at = this.txTimestamp(ctx);
+    priv.accepted_qty = priv.received_qty; // full acceptance (minimal GRN)
+
+    await ctx.stub.putState(this.grnKey(grnId), Buffer.from(JSON.stringify(index)));
+    await this.putPrivate(ctx, this.grnKey(grnId), priv);
+    ctx.stub.setEvent('GRNAccepted', Buffer.from(JSON.stringify({ grn_id: grnId, status: index.status })));
+    return JSON.stringify({ ...index, ...priv });
   }
 
   @Transaction(false)
   @Returns('string')
   async getGRN(ctx: Context, grnId: string): Promise<string> {
-    return JSON.stringify(await this.getGRNState(ctx, grnId));
+    const index = await this.getGRNIndex(ctx, grnId);
+    if (!this.isParty(ctx, index.party_msps)) return JSON.stringify(index);
+    const priv = await this.getPrivate<GRNPrivate>(ctx, this.grnKey(grnId));
+    return JSON.stringify({ ...index, ...(priv ?? {}) });
   }
 
   // ═══ Invoices ═══════════════════════════════════════════════════════════════
 
   @Transaction()
   async submitInvoice(ctx: Context, invoiceJson: string): Promise<string> {
-    const input = JSON.parse(invoiceJson) as Partial<Invoice>;
+    const input = JSON.parse(invoiceJson) as Partial<InvoiceIndex>;
+    const priv = this.transientPayload<Partial<InvoicePrivate>>(ctx);
 
     if (!input.invoice_id) throw new Error('invoice_id is required');
     if (!input.supplier_id) throw new Error('supplier_id is required');
     if (!input.buyer_id) throw new Error('buyer_id is required');
     if (!input.po_id) throw new Error('po_id is required');
     if (!input.grn_id) throw new Error('grn_id is required');
-    if (input.amount === undefined) throw new Error('amount is required');
-    if (input.quantity === undefined) throw new Error('quantity is required');
-    if (!input.due_date) throw new Error('due_date is required');
+    if (priv.amount === undefined) throw new Error('amount is required');
+    if (priv.quantity === undefined) throw new Error('quantity is required');
+    if (!priv.due_date) throw new Error('due_date is required');
     if (!input.doc_hash) throw new Error('doc_hash is required');
-    if (!(input.amount > 0)) throw new Error('amount must be positive');
+    if (!(priv.amount > 0)) throw new Error('amount must be positive');
+    if (!priv.salt) throw new Error('salt is required — predictable private data is brute-forceable');
 
     if (await this.exists(ctx, this.invKey(input.invoice_id))) {
       throw new Error(`Invoice ${input.invoice_id} already exists`);
@@ -342,28 +381,37 @@ export class TradeDocChaincode extends Contract {
     await this.registerDocHash(ctx, input.doc_hash, 'Invoice', input.invoice_id);
 
     const now = this.txTimestamp(ctx);
-    const invoice: Invoice = {
+    // The invoice inherits the PO's party set — same deal, same entitled orgs.
+    const poIndex = await this.getPOIndex(ctx, input.po_id);
+    this.assertParty(ctx, poIndex.party_msps, `invoice ${input.invoice_id}`);
+
+    const index: InvoiceIndex = {
       invoice_id: input.invoice_id,
       supplier_id: input.supplier_id,
       buyer_id: input.buyer_id,
       po_id: input.po_id,
       grn_id: input.grn_id,
-      amount: input.amount,
-      quantity: input.quantity,
-      currency: input.currency ?? 'INR',
-      due_date: input.due_date,
+      party_msps: poIndex.party_msps,
       doc_hash: input.doc_hash,
       status: 'Submitted',
       assignment_status: 'Unassigned',
       created_at: now,
       updated_at: now,
     };
-    await ctx.stub.putState(this.invKey(invoice.invoice_id), Buffer.from(JSON.stringify(invoice)));
+    const payload: InvoicePrivate = {
+      amount: priv.amount!,
+      quantity: priv.quantity!,
+      currency: priv.currency ?? 'INR',
+      due_date: priv.due_date!,
+      salt: priv.salt!,
+    };
+    await ctx.stub.putState(this.invKey(index.invoice_id), Buffer.from(JSON.stringify(index)));
+    await this.putPrivate(ctx, this.invKey(index.invoice_id), payload);
     ctx.stub.setEvent('InvoiceSubmitted', Buffer.from(JSON.stringify({
-      invoice_id: invoice.invoice_id, po_id: invoice.po_id, grn_id: invoice.grn_id,
-      status: invoice.status, doc_hash: invoice.doc_hash,
+      invoice_id: index.invoice_id, po_id: index.po_id, grn_id: index.grn_id,
+      status: index.status, doc_hash: index.doc_hash,
     })));
-    return JSON.stringify(invoice);
+    return JSON.stringify({ ...index, ...payload });
   }
 
   // 3-way match: Invoice ↔ PO ↔ GRN (FR-DOC-03, Rule-01 inputs).
@@ -374,7 +422,8 @@ export class TradeDocChaincode extends Contract {
       throw new Error(`3-way match requires invoice in Submitted, found ${invoice.status}`);
     }
     await this.applyMatch(ctx, invoice);
-    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    await this.persistInvoiceIndex(ctx, invoice);
+    await this.persistInvoicePrivate(ctx, invoice);
     return JSON.stringify(invoice);
   }
 
@@ -402,6 +451,9 @@ export class TradeDocChaincode extends Contract {
     if (po_link && po!.gross_value === undefined) {
       throw new Error(`PO ${invoice.po_id} private payload is not readable on this peer — cannot match`);
     }
+    if (invoice.amount === undefined || invoice.quantity === undefined) {
+      throw new Error(`Invoice ${invoice.invoice_id} private payload is not readable on this peer — cannot match`);
+    }
     const amount_within_po = po_link ? invoice.amount <= po!.gross_value! : false;
     if (po_link && !amount_within_po) {
       reasons.push(`Invoice amount exceeds PO gross value`);
@@ -410,16 +462,18 @@ export class TradeDocChaincode extends Contract {
     const acceptedQty = grn_link ? (grn!.accepted_qty ?? 0) : 0;
     const qty_within_grn = grn_link ? invoice.quantity <= acceptedQty : false;
     if (grn_link && !qty_within_grn) {
-      reasons.push(`Invoice quantity ${invoice.quantity} exceeds GRN accepted_qty ${acceptedQty}`);
+      reasons.push(`Invoice quantity exceeds GRN accepted quantity`);
     }
 
     const passed = po_link && grn_link && amount_within_po && qty_within_grn && reasons.length === 0;
+    // Outcome and per-check booleans are public — finance-cc reads passed across
+    // chaincodes for Rule-01. The reasons text names figures, so it is private.
     invoice.match_result = {
       passed,
       checks: { po_link, grn_link, amount_within_po, qty_within_grn },
-      reasons,
       matched_at: this.txTimestamp(ctx),
     };
+    invoice.match_reasons = reasons;
     invoice.updated_at = this.txTimestamp(ctx);
     if (passed) {
       invoice.status = 'Matched';
@@ -427,7 +481,7 @@ export class TradeDocChaincode extends Contract {
     } else {
       // `reasons` holds both documents' figures in free text — it stays in state
       // (invoice.match_result) and never enters an event. Only the check NAMES go out.
-      const failed_checks = Object.entries(invoice.match_result.checks)
+      const failed_checks = Object.entries(invoice.match_result!.checks)
         .filter(([, ok]) => !ok)
         .map(([check]) => check);
       ctx.stub.setEvent('InvoiceMatchFailed', Buffer.from(JSON.stringify({
@@ -440,15 +494,17 @@ export class TradeDocChaincode extends Contract {
   // re-run the match. Ledger history preserves prior versions (audit intact). Only
   // legal pre-approval — once Matched/Approved/Assigned the invoice is immutable.
   @Transaction()
-  async reviseInvoice(ctx: Context, invoiceId: string, amount: string, quantity: string, docHash: string): Promise<string> {
+  async reviseInvoice(ctx: Context, invoiceId: string, docHash: string): Promise<string> {
     const invoice = await this.getInvoiceState(ctx, invoiceId);
     if (invoice.status !== 'Submitted') {
       throw new Error(`Only a Submitted invoice can be revised, found ${invoice.status}`);
     }
-    const amt = Number(amount);
-    const qty = Number(quantity);
-    if (!Number.isFinite(amt) || amt <= 0) throw new Error(`Invalid amount: ${amount}`);
-    if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Invalid quantity: ${quantity}`);
+    this.assertParty(ctx, invoice.party_msps, `invoice ${invoiceId}`);
+    const priv = this.transientPayload<Partial<InvoicePrivate>>(ctx);
+    const amt = Number(priv.amount);
+    const qty = Number(priv.quantity);
+    if (!Number.isFinite(amt) || amt <= 0) throw new Error(`Invalid amount: ${priv.amount}`);
+    if (!Number.isFinite(qty) || qty <= 0) throw new Error(`Invalid quantity: ${priv.quantity}`);
 
     if (docHash && docHash !== invoice.doc_hash) {
       await this.registerDocHash(ctx, docHash, 'Invoice', invoiceId); // FR-DOC-04 on the corrected doc
@@ -462,7 +518,8 @@ export class TradeDocChaincode extends Contract {
 
     // Re-run the 3-way match on the corrected figures, then persist once.
     await this.applyMatch(ctx, invoice);
-    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    await this.persistInvoiceIndex(ctx, invoice);
+    await this.persistInvoicePrivate(ctx, invoice);
     return JSON.stringify(invoice);
   }
 
@@ -475,7 +532,7 @@ export class TradeDocChaincode extends Contract {
     }
     invoice.status = 'Approved';
     invoice.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    await this.persistInvoiceIndex(ctx, invoice);
     ctx.stub.setEvent('InvoiceApproved', Buffer.from(JSON.stringify({ invoice_id: invoiceId })));
     return JSON.stringify(invoice);
   }
@@ -486,7 +543,7 @@ export class TradeDocChaincode extends Contract {
     this.assertInvoiceTransition(invoice.status, 'Closed');
     invoice.status = 'Closed';
     invoice.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    await this.persistInvoiceIndex(ctx, invoice);
     ctx.stub.setEvent('InvoiceRejected', Buffer.from(JSON.stringify({ invoice_id: invoiceId, status: invoice.status })));
     return JSON.stringify(invoice);
   }
@@ -497,7 +554,7 @@ export class TradeDocChaincode extends Contract {
     this.assertInvoiceTransition(invoice.status, 'Disputed');
     invoice.status = 'Disputed';
     invoice.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    await this.persistInvoiceIndex(ctx, invoice);
     ctx.stub.setEvent('InvoiceDisputed', Buffer.from(JSON.stringify({ invoice_id: invoiceId, status: invoice.status })));
     return JSON.stringify(invoice);
   }
@@ -505,8 +562,15 @@ export class TradeDocChaincode extends Contract {
   // Assign an approved invoice to a lender (invoice discounting / receivables finance).
   // Called cross-chaincode by finance-cc on lock, or directly. Locks against further assignment.
   @Transaction()
-  async assignInvoice(ctx: Context, invoiceId: string, lenderId: string): Promise<string> {
+  /**
+   * Assignment transfers the receivable, so the lender becomes a party to it and
+   * is added to the invoice's party set. Without this the lender owns an invoice
+   * it cannot read — which surfaced as the net-settlement maths producing NaN,
+   * because the amount simply was not there to read.
+   */
+  async assignInvoice(ctx: Context, invoiceId: string, lenderId: string, lenderMsp: string): Promise<string> {
     if (!lenderId) throw new Error('lenderId is required');
+    if (!lenderMsp) throw new Error('lenderMsp is required — the assignee must become a party to the invoice');
     const invoice = await this.getInvoiceState(ctx, invoiceId);
     if (invoice.assignment_status === 'Assigned') {
       throw new Error(`Invoice ${invoiceId} is already assigned to ${invoice.assigned_to}`);
@@ -515,8 +579,9 @@ export class TradeDocChaincode extends Contract {
     invoice.status = 'Assigned';
     invoice.assignment_status = 'Assigned';
     invoice.assigned_to = lenderId;
+    if (!invoice.party_msps.includes(lenderMsp)) invoice.party_msps = [...invoice.party_msps, lenderMsp];
     invoice.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.invKey(invoiceId), Buffer.from(JSON.stringify(invoice)));
+    await this.persistInvoiceIndex(ctx, invoice);
     ctx.stub.setEvent('InvoiceAssigned', Buffer.from(JSON.stringify({ invoice_id: invoiceId, assigned_to: lenderId })));
     return JSON.stringify(invoice);
   }
@@ -524,7 +589,12 @@ export class TradeDocChaincode extends Contract {
   @Transaction(false)
   @Returns('string')
   async getInvoice(ctx: Context, invoiceId: string): Promise<string> {
-    return JSON.stringify(await this.getInvoiceState(ctx, invoiceId));
+    const index = await this.getInvoiceIndex(ctx, invoiceId);
+    // A non-party sees the invoice exists, its status and whether it matched —
+    // never its amount. finance-cc relies on exactly that public surface.
+    if (!this.isParty(ctx, index.party_msps)) return JSON.stringify(index);
+    const priv = await this.getPrivate<InvoicePrivate>(ctx, this.invKey(invoiceId));
+    return JSON.stringify({ ...index, ...(priv ?? {}) });
   }
 
   // ─── Helpers ──────────────────────────────────────────────────────────────
@@ -568,15 +638,67 @@ export class TradeDocChaincode extends Contract {
    * implicit collections have no memberOnlyRead to fall back on. Every private
    * read therefore checks the caller against the deal's party list here.
    */
-  private assertParty(ctx: Context, partyMsps: string[], what: string): void {
-    const caller = ctx.clientIdentity.getMSPID();
-    if (caller === 'PlatformMSP' || partyMsps.includes(caller)) return;
-    throw new Error(`${caller} is not a party to ${what}`);
+  private assertParty(ctx: Context, partyMsps: string[] | undefined, what: string): void {
+    if (!this.isParty(ctx, partyMsps)) {
+      throw new Error(`${ctx.clientIdentity.getMSPID()} is not a party to ${what}`);
+    }
   }
 
-  private isParty(ctx: Context, partyMsps: string[]): boolean {
+  /**
+   * A record written before party sets existed has no list. Treat that as
+   * "nobody but the custodian" rather than letting an undefined crash the
+   * query — a missing party list must deny access, not throw a confusing 500.
+   */
+  private isParty(ctx: Context, partyMsps: string[] | undefined): boolean {
     const caller = ctx.clientIdentity.getMSPID();
-    return caller === 'PlatformMSP' || partyMsps.includes(caller);
+    if (caller === 'PlatformMSP') return true;
+    return Array.isArray(partyMsps) && partyMsps.includes(caller);
+  }
+
+  // ─── Index persistence ────────────────────────────────────────────────────
+  // Each index is rebuilt field by field rather than spread from the merged
+  // view. A merged object carries the private payload, so spreading it into
+  // putState would publish exactly what the collection exists to hide — and a
+  // private field added later would leak silently. Listing the public fields
+  // explicitly makes that impossible.
+
+  private async persistPOIndex(ctx: Context, po: PurchaseOrder | POIndex): Promise<void> {
+    const index: POIndex = {
+      po_id: po.po_id, buyer_id: po.buyer_id, supplier_id: po.supplier_id,
+      party_msps: po.party_msps, doc_hash: po.doc_hash, status: po.status,
+      amendment_count: po.amendment_count, created_at: po.created_at, updated_at: po.updated_at,
+    };
+    await ctx.stub.putState(this.poKey(po.po_id), Buffer.from(JSON.stringify(index)));
+  }
+
+  private async persistGRNIndex(ctx: Context, grn: GoodsReceipt | GRNIndex): Promise<void> {
+    const index: GRNIndex = {
+      grn_id: grn.grn_id, po_id: grn.po_id, party_msps: grn.party_msps,
+      doc_hash: grn.doc_hash, status: grn.status,
+      created_at: grn.created_at, updated_at: grn.updated_at,
+    };
+    await ctx.stub.putState(this.grnKey(grn.grn_id), Buffer.from(JSON.stringify(index)));
+  }
+
+  private async persistInvoiceIndex(ctx: Context, inv: Invoice | InvoiceIndex): Promise<void> {
+    const index: InvoiceIndex = {
+      invoice_id: inv.invoice_id, supplier_id: inv.supplier_id, buyer_id: inv.buyer_id,
+      po_id: inv.po_id, grn_id: inv.grn_id, party_msps: inv.party_msps,
+      doc_hash: inv.doc_hash, status: inv.status, match_result: inv.match_result,
+      assignment_status: inv.assignment_status, assigned_to: inv.assigned_to,
+      created_at: inv.created_at, updated_at: inv.updated_at,
+    };
+    await ctx.stub.putState(this.invKey(inv.invoice_id), Buffer.from(JSON.stringify(index)));
+  }
+
+  /** Write back only the private half of a merged invoice. */
+  private async persistInvoicePrivate(ctx: Context, inv: Invoice): Promise<void> {
+    if (inv.salt === undefined) return; // payload not readable here — leave it alone
+    const payload: InvoicePrivate = {
+      amount: inv.amount!, quantity: inv.quantity!, currency: inv.currency!,
+      due_date: inv.due_date!, match_reasons: inv.match_reasons, salt: inv.salt,
+    };
+    await this.putPrivate(ctx, this.invKey(inv.invoice_id), payload);
   }
 
   private poKey(id: string): string { return `PO:${id}`; }
@@ -612,7 +734,7 @@ export class TradeDocChaincode extends Contract {
     this.assertPOTransition(po.status, to);
     po.status = to;
     po.updated_at = this.txTimestamp(ctx);
-    await ctx.stub.putState(this.poKey(poId), Buffer.from(JSON.stringify(po)));
+    await this.persistPOIndex(ctx, po);
     ctx.stub.setEvent(event, Buffer.from(JSON.stringify({ po_id: poId, status: to })));
     return JSON.stringify(po);
   }
@@ -643,20 +765,35 @@ export class TradeDocChaincode extends Contract {
     return { ...index, ...(priv ?? {}) };
   }
 
-  private async getGRNState(ctx: Context, grnId: string): Promise<GoodsReceipt> {
+  private async getGRNIndex(ctx: Context, grnId: string): Promise<GRNIndex> {
     const data = await ctx.stub.getState(this.grnKey(grnId));
     if (!data || data.length === 0) throw new Error(`GRN ${grnId} not found`);
-    return JSON.parse(data.toString()) as GoodsReceipt;
+    return JSON.parse(data.toString()) as GRNIndex;
+  }
+
+  private async getGRNState(ctx: Context, grnId: string): Promise<GoodsReceipt> {
+    const index = await this.getGRNIndex(ctx, grnId);
+    const priv = await this.getPrivate<GRNPrivate>(ctx, this.grnKey(grnId));
+    return { ...index, ...(priv ?? {}) };
   }
 
   private async tryGetGRN(ctx: Context, grnId: string): Promise<GoodsReceipt | null> {
     const data = await ctx.stub.getState(this.grnKey(grnId));
-    return data && data.length > 0 ? (JSON.parse(data.toString()) as GoodsReceipt) : null;
+    if (!data || data.length === 0) return null;
+    const index = JSON.parse(data.toString()) as GRNIndex;
+    const priv = await this.getPrivate<GRNPrivate>(ctx, this.grnKey(grnId));
+    return { ...index, ...(priv ?? {}) };
+  }
+
+  private async getInvoiceIndex(ctx: Context, invoiceId: string): Promise<InvoiceIndex> {
+    const data = await ctx.stub.getState(this.invKey(invoiceId));
+    if (!data || data.length === 0) throw new Error(`Invoice ${invoiceId} not found`);
+    return JSON.parse(data.toString()) as InvoiceIndex;
   }
 
   private async getInvoiceState(ctx: Context, invoiceId: string): Promise<Invoice> {
-    const data = await ctx.stub.getState(this.invKey(invoiceId));
-    if (!data || data.length === 0) throw new Error(`Invoice ${invoiceId} not found`);
-    return JSON.parse(data.toString()) as Invoice;
+    const index = await this.getInvoiceIndex(ctx, invoiceId);
+    const priv = await this.getPrivate<InvoicePrivate>(ctx, this.invKey(invoiceId));
+    return { ...index, ...(priv ?? {}) };
   }
 }

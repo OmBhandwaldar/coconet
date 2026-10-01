@@ -1,4 +1,5 @@
 import { env } from '../config/env.js';
+import { mspForOrg } from '../fabric/private-data.js';
 import { invoke, query } from '../fabric/fabric.service.js';
 import { getInvoice } from './trade-doc.service.js';
 
@@ -63,6 +64,9 @@ export async function createPreShipment(input: PreShipmentInput): Promise<Financ
     requestor_org_id: input.requestor_org_id,
     requested_amount: input.requested_amount,
     lender_id: input.lender_id,
+    // Assignment adds the lender to the invoice's party set, so the chaincode
+    // needs its MSP — otherwise the lender owns a receivable it cannot read.
+    lender_msp: input.lender_id ? await mspForOrg(input.lender_id) : undefined,
   };
   return invoke<FinanceRequest>(cc, 'createFinanceRequest', JSON.stringify(payload));
 }
@@ -80,6 +84,9 @@ export async function createInvoiceDiscounting(input: InvoiceDiscountingInput): 
     requestor_org_id: input.requestor_org_id,
     requested_amount: input.requested_amount,
     lender_id: input.lender_id,
+    // Assignment adds the lender to the invoice's party set, so the chaincode
+    // needs its MSP — otherwise the lender owns a receivable it cannot read.
+    lender_msp: input.lender_id ? await mspForOrg(input.lender_id) : undefined,
     discount_rate: input.discount_rate,
   };
   return invoke<FinanceRequest>(cc, 'createFinanceRequest', JSON.stringify(payload));

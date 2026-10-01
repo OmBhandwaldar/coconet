@@ -18,6 +18,7 @@ export interface FinanceRequest {
   asset_id: string;
   requestor_org_id: string;
   lender_id?: string;
+  lender_msp?: string;
   requested_amount: number;
   advance_rate?: number;
   discount_rate?: number;
@@ -92,6 +93,9 @@ export class FinanceChaincode extends Contract {
       asset_id: input.asset_id,
       requestor_org_id: input.requestor_org_id,
       lender_id: input.lender_id,
+      // Needed when the invoice is assigned: the assignee must be added to the
+      // invoice's party set or it cannot read the receivable it now owns.
+      lender_msp: input.lender_msp,
       requested_amount: input.requested_amount,
       security_interest_state: 'None',
       status: 'Requested',
@@ -208,7 +212,8 @@ export class FinanceChaincode extends Contract {
       await this.crossInvoke(ctx, 'lockPO', fr.asset_id);
     } else {
       if (!fr.lender_id) throw new Error('lender_id is required before assigning an invoice');
-      await this.crossInvoke(ctx, 'assignInvoice', fr.asset_id, fr.lender_id);
+      if (!fr.lender_msp) throw new Error('lender_msp is required to assign an invoice');
+      await this.crossInvoke(ctx, 'assignInvoice', fr.asset_id, fr.lender_id, fr.lender_msp);
     }
     await ctx.stub.putState(lockKey, Buffer.from(JSON.stringify({ request_id: requestId, at: this.txTimestamp(ctx) })));
 

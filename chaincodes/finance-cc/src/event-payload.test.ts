@@ -74,6 +74,7 @@ const disc = {
   asset_id: 'BS-INV-2024-1102',
   requestor_org_id: 'bharat-001',
   lender_id: 'hdfc-001',
+  lender_msp: 'LenderMSP',
   requested_amount: 24255000,
 };
 

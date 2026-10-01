@@ -112,7 +112,12 @@ describe('GRN routes', () => {
       .post('/api/trade-docs/grn')
       .send({ grn_id: 'TM-GRN-2024-0892', po_id: 'TM-PO-2024-0892', received_qty: 10000 });
     expect(res.status).toBe(201);
-    expect(fabricService.invoke).toHaveBeenCalledWith('trade-doc-cc', 'createGRN', 'TM-GRN-2024-0892', 'TM-PO-2024-0892', '10000', '');
+    // Received quantity is a figure, so it travels as transient, not an argument.
+    const [, fn, args, transient] = (fabricService.invokeWithTransient as any).mock.calls[0];
+    expect(fn).toBe('createGRN');
+    expect(args).toEqual(['TM-GRN-2024-0892', 'TM-PO-2024-0892', '']);
+    expect(transient.received_qty).toBe(10000);
+    expect(transient.salt).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('accepts a GRN', async () => {
@@ -127,7 +132,14 @@ describe('Invoice routes', () => {
     vi.spyOn(fabricService, 'invoke').mockResolvedValue(fakeInvoice);
     const res = await request.post('/api/trade-docs/invoices').send(validInvoice);
     expect(res.status).toBe(201);
-    expect(fabricService.invoke).toHaveBeenCalledWith('trade-doc-cc', 'submitInvoice', JSON.stringify(validInvoice));
+    const [, fn, args, transient] = (fabricService.invokeWithTransient as any).mock.calls[0];
+    expect(fn).toBe('submitInvoice');
+    const index = JSON.parse(args[0]);
+    expect(index.invoice_id).toBe(validInvoice.invoice_id);
+    expect(index).not.toHaveProperty('amount');
+    expect(index).not.toHaveProperty('quantity');
+    expect(transient.amount).toBe(validInvoice.amount);
+    expect(transient.salt).toMatch(/^[0-9a-f]{32}$/);
   });
 
   it('rejects an invoice missing doc_hash with 400', async () => {

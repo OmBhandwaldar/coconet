@@ -126,6 +126,29 @@ function poPrivateArgs(po: any) {
   };
 }
 
+/** Submit an invoice the way the API does: figures as transient. */
+async function submitInvoice(ctx: any, inv: any, overrides: Record<string, unknown> = {}) {
+  ctx.__setTransient({
+    amount: inv.amount, quantity: inv.quantity, currency: inv.currency ?? 'INR',
+    due_date: inv.due_date, salt: TEST_SALT, ...overrides,
+  });
+  return cc.submitInvoice(ctx, JSON.stringify({
+    invoice_id: inv.invoice_id, supplier_id: inv.supplier_id, buyer_id: inv.buyer_id,
+    po_id: inv.po_id, grn_id: inv.grn_id, doc_hash: inv.doc_hash,
+  }));
+}
+
+async function reviseInvoice(ctx: any, id: string, amount: number, quantity: number, docHash = '') {
+  ctx.__setTransient({ amount, quantity, salt: TEST_SALT });
+  return cc.reviseInvoice(ctx, id, docHash);
+}
+
+/** Submit a GRN the way the API does: quantity as transient, never an argument. */
+async function createGRN(ctx: any, grnId: string, poId: string, qty: number, docHash = '') {
+  ctx.__setTransient({ received_qty: qty, salt: TEST_SALT });
+  return cc.createGRN(ctx, grnId, poId, docHash);
+}
+
 /** Submit a PO the way the API does: index as args, figures as transient. */
 async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
   ctx.__setTransient({ ...poPrivateArgs(po), ...overrides });
@@ -148,7 +171,7 @@ describe('trade-doc-cc event payload contract', () => {
   it('emits no commercial data across the GRN lifecycle', async () => {
     const ctx = makeCtx({});
     await createPO(ctx, po);
-    await cc.createGRN(ctx, invoice.grn_id, po.po_id, '9900', 'grn-hash-0892');
+    await createGRN(ctx, invoice.grn_id, po.po_id, 9900, 'grn-hash-0892');
     await cc.acceptGRN(ctx, invoice.grn_id);
     assertNoCommercialData(emitted(ctx));
   });
@@ -156,12 +179,12 @@ describe('trade-doc-cc event payload contract', () => {
   it('emits no commercial data across the invoice lifecycle', async () => {
     const ctx = makeCtx({});
     await createPO(ctx, po);
-    await cc.createGRN(ctx, invoice.grn_id, po.po_id, '9900', '');
+    await createGRN(ctx, invoice.grn_id, po.po_id, 9900, '');
     await cc.acceptGRN(ctx, invoice.grn_id);
-    await cc.submitInvoice(ctx, JSON.stringify(invoice));
+    await submitInvoice(ctx, invoice);
     await cc.runThreeWayMatch(ctx, invoice.invoice_id);
     await cc.approveInvoice(ctx, invoice.invoice_id);
-    await cc.assignInvoice(ctx, invoice.invoice_id, 'hdfc-001');
+    await cc.assignInvoice(ctx, invoice.invoice_id, 'hdfc-001', 'LenderMSP');
     assertNoCommercialData(emitted(ctx));
   });
 
@@ -171,9 +194,9 @@ describe('trade-doc-cc event payload contract', () => {
   it('emits no commercial data when the 3-way match FAILS', async () => {
     const ctx = makeCtx({});
     await createPO(ctx, po);
-    await cc.createGRN(ctx, invoice.grn_id, po.po_id, '100', '');
+    await createGRN(ctx, invoice.grn_id, po.po_id, 100, '');
     await cc.acceptGRN(ctx, invoice.grn_id);
-    await cc.submitInvoice(ctx, JSON.stringify({ ...invoice, amount: 99000000 }));
+    await submitInvoice(ctx, { ...invoice, amount: 99000000 });
     await cc.runThreeWayMatch(ctx, invoice.invoice_id);
 
     const names = emitted(ctx).map((e) => e.name);
@@ -185,9 +208,9 @@ describe('trade-doc-cc event payload contract', () => {
   it('emits no commercial data when an invoice is rejected or disputed', async () => {
     const ctx = makeCtx({});
     await createPO(ctx, po);
-    await cc.createGRN(ctx, invoice.grn_id, po.po_id, '9900', '');
+    await createGRN(ctx, invoice.grn_id, po.po_id, 9900, '');
     await cc.acceptGRN(ctx, invoice.grn_id);
-    await cc.submitInvoice(ctx, JSON.stringify(invoice));
+    await submitInvoice(ctx, invoice);
     await cc.rejectInvoice(ctx, invoice.invoice_id, 'short by 100 units, value 250000');
     assertNoCommercialData(emitted(ctx));
   });

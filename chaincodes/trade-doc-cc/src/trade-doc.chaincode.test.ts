@@ -83,6 +83,29 @@ function poPrivateArgs(po: any) {
   };
 }
 
+/** Submit an invoice the way the API does: figures as transient. */
+async function submitInvoice(ctx: any, inv: any, overrides: Record<string, unknown> = {}) {
+  ctx.__setTransient({
+    amount: inv.amount, quantity: inv.quantity, currency: inv.currency ?? 'INR',
+    due_date: inv.due_date, salt: TEST_SALT, ...overrides,
+  });
+  return cc.submitInvoice(ctx, JSON.stringify({
+    invoice_id: inv.invoice_id, supplier_id: inv.supplier_id, buyer_id: inv.buyer_id,
+    po_id: inv.po_id, grn_id: inv.grn_id, doc_hash: inv.doc_hash,
+  }));
+}
+
+async function reviseInvoice(ctx: any, id: string, amount: number, quantity: number, docHash = '') {
+  ctx.__setTransient({ amount, quantity, salt: TEST_SALT });
+  return cc.reviseInvoice(ctx, id, docHash);
+}
+
+/** Submit a GRN the way the API does: quantity as transient, never an argument. */
+async function createGRN(ctx: any, grnId: string, poId: string, qty: number, docHash = '') {
+  ctx.__setTransient({ received_qty: qty, salt: TEST_SALT });
+  return cc.createGRN(ctx, grnId, poId, docHash);
+}
+
 /** Submit a PO the way the API does: index as args, figures as transient. */
 async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = {}) {
   ctx.__setTransient({ ...poPrivateArgs(po), ...overrides });
@@ -93,7 +116,7 @@ async function createPO(ctx: any, po: any, overrides: Record<string, unknown> = 
 // Helper: stand up a PO + accepted GRN so an invoice can match.
 async function seedPoAndGrn(ctx: any) {
   await createPO(ctx, validPO);
-  await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '10000', '');
+  await createGRN(ctx, validInvoice.grn_id, validPO.po_id, 10000, '');
   await cc.acceptGRN(ctx, validInvoice.grn_id);
 }
 
@@ -173,7 +196,7 @@ describe('TradeDocChaincode', () => {
     it('creates and accepts a GRN, setting accepted_qty', async () => {
       const ctx = makeCtx({});
       await createPO(ctx, validPO);
-      await cc.createGRN(ctx, 'grn-1', validPO.po_id, '10000', '');
+      await createGRN(ctx, 'grn-1', validPO.po_id, 10000, '');
       const grn = JSON.parse(await cc.acceptGRN(ctx, 'grn-1'));
       expect(grn.status).to.equal('Accepted');
       expect(grn.accepted_qty).to.equal(10000);
@@ -181,17 +204,17 @@ describe('TradeDocChaincode', () => {
 
     it('rejects GRN against a non-existent PO', async () => {
       const ctx = makeCtx({});
-      await expect(cc.createGRN(ctx, 'grn-x', 'NO-SUCH-PO', '10', '')).to.be.rejectedWith(/not found/);
+      await expect(createGRN(ctx, 'grn-x', 'NO-SUCH-PO', 10, '')).to.be.rejectedWith(/not found/);
     });
 
     it('stores and registers an optional GRN doc_hash', async () => {
       const ctx = makeCtx({});
       await createPO(ctx, validPO);
-      const grn = JSON.parse(await cc.createGRN(ctx, 'grn-h', validPO.po_id, '10000', 'grn-hash-xyz'));
+      const grn = JSON.parse(await createGRN(ctx, 'grn-h', validPO.po_id, 10000, 'grn-hash-xyz'));
       expect(grn.doc_hash).to.equal('grn-hash-xyz');
       // A later document reusing that hash is blocked (FR-DOC-04).
       await expect(
-        cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, grn_id: 'grn-h', doc_hash: 'grn-hash-xyz' }))
+        submitInvoice(ctx, { ...validInvoice, grn_id: 'grn-h', doc_hash: 'grn-hash-xyz' })
       ).to.be.rejectedWith(/Duplicate document hash/);
     });
   });
@@ -200,7 +223,7 @@ describe('TradeDocChaincode', () => {
     it('submits an invoice in Submitted status', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      const inv = JSON.parse(await cc.submitInvoice(ctx, JSON.stringify(validInvoice)));
+      const inv = JSON.parse(await submitInvoice(ctx, validInvoice));
       expect(inv.status).to.equal('Submitted');
       expect(inv.invoice_id).to.equal('BS-INV-2024-0892');
     });
@@ -208,9 +231,9 @@ describe('TradeDocChaincode', () => {
     it('rejects a duplicate document hash (FR-DOC-04)', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await expect(
-        cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, invoice_id: 'BS-INV-DUP' }))
+        submitInvoice(ctx, { ...validInvoice, invoice_id: 'BS-INV-DUP' })
       ).to.be.rejectedWith(/Duplicate document hash/);
     });
 
@@ -218,7 +241,7 @@ describe('TradeDocChaincode', () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
       await expect(
-        cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, doc_hash: 'po-hash-0892' }))
+        submitInvoice(ctx, { ...validInvoice, doc_hash: 'po-hash-0892' })
       ).to.be.rejectedWith(/Duplicate document hash/);
     });
   });
@@ -227,7 +250,7 @@ describe('TradeDocChaincode', () => {
     it('passes when amount ≤ PO and qty ≤ accepted GRN, moving to Matched', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       const inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.status).to.equal('Matched');
       expect(inv.match_result.passed).to.equal(true);
@@ -239,7 +262,7 @@ describe('TradeDocChaincode', () => {
     it('fails when invoice amount exceeds PO gross_value (stays Submitted)', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify({ ...validInvoice, amount: 30000000 }));
+      await submitInvoice(ctx, { ...validInvoice, amount: 30000000 });
       const inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.status).to.equal('Submitted');
       expect(inv.match_result.passed).to.equal(false);
@@ -249,9 +272,9 @@ describe('TradeDocChaincode', () => {
     it('fails when invoice quantity exceeds accepted GRN quantity', async () => {
       const ctx = makeCtx({});
       await createPO(ctx, validPO);
-      await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
+      await createGRN(ctx, validInvoice.grn_id, validPO.po_id, 8000, '');
       await cc.acceptGRN(ctx, validInvoice.grn_id);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000
+      await submitInvoice(ctx, validInvoice); // qty 10000 > accepted 8000
       const inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.match_result.passed).to.equal(false);
       expect(inv.match_result.checks.qty_within_grn).to.equal(false);
@@ -262,13 +285,13 @@ describe('TradeDocChaincode', () => {
     it('corrects a failed Submitted invoice and re-matches to Matched', async () => {
       const ctx = makeCtx({});
       await createPO(ctx, validPO);
-      await cc.createGRN(ctx, validInvoice.grn_id, validPO.po_id, '8000', '');
+      await createGRN(ctx, validInvoice.grn_id, validPO.po_id, 8000, '');
       await cc.acceptGRN(ctx, validInvoice.grn_id);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice)); // qty 10000 > accepted 8000 → fails
+      await submitInvoice(ctx, validInvoice); // qty 10000 > accepted 8000 → fails
       let inv = JSON.parse(await cc.runThreeWayMatch(ctx, validInvoice.invoice_id));
       expect(inv.status).to.equal('Submitted');
 
-      inv = JSON.parse(await cc.reviseInvoice(ctx, validInvoice.invoice_id, '20000000', '8000', ''));
+      inv = JSON.parse(await reviseInvoice(ctx, validInvoice.invoice_id, 20000000, 8000, ''));
       expect(inv.status).to.equal('Matched');
       expect(inv.quantity).to.equal(8000);
       expect(inv.amount).to.equal(20000000);
@@ -278,9 +301,9 @@ describe('TradeDocChaincode', () => {
     it('refuses to revise a non-Submitted (Matched) invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await cc.runThreeWayMatch(ctx, validInvoice.invoice_id); // → Matched
-      await expect(cc.reviseInvoice(ctx, validInvoice.invoice_id, '100', '100', ''))
+      await expect(reviseInvoice(ctx, validInvoice.invoice_id, 100, 100, ''))
         .to.be.rejectedWith(/Only a Submitted invoice can be revised/);
     });
   });
@@ -288,7 +311,7 @@ describe('TradeDocChaincode', () => {
   describe('approve / reject / dispute', () => {
     async function matchedInvoice(ctx: any) {
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await cc.runThreeWayMatch(ctx, validInvoice.invoice_id);
     }
 
@@ -302,7 +325,7 @@ describe('TradeDocChaincode', () => {
     it('refuses to approve an unmatched (Submitted) invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await expect(cc.approveInvoice(ctx, validInvoice.invoice_id)).to.be.rejectedWith(/Illegal invoice transition/);
     });
 
@@ -316,7 +339,7 @@ describe('TradeDocChaincode', () => {
     it('rejects (closes) a Submitted invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       const inv = JSON.parse(await cc.rejectInvoice(ctx, validInvoice.invoice_id, 'wrong buyer'));
       expect(inv.status).to.equal('Closed');
     });
@@ -325,7 +348,7 @@ describe('TradeDocChaincode', () => {
   describe('assignInvoice', () => {
     async function approvedInvoice(ctx: any) {
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
+      await submitInvoice(ctx, validInvoice);
       await cc.runThreeWayMatch(ctx, validInvoice.invoice_id);
       await cc.approveInvoice(ctx, validInvoice.invoice_id);
     }
@@ -333,7 +356,7 @@ describe('TradeDocChaincode', () => {
     it('assigns an Approved invoice to a lender', async () => {
       const ctx = makeCtx({});
       await approvedInvoice(ctx);
-      const inv = JSON.parse(await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001'));
+      const inv = JSON.parse(await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001', 'LenderMSP'));
       expect(inv.status).to.equal('Assigned');
       expect(inv.assignment_status).to.equal('Assigned');
       expect(inv.assigned_to).to.equal('hdfc-001');
@@ -342,15 +365,15 @@ describe('TradeDocChaincode', () => {
     it('rejects a second assignment (locked against further assignment)', async () => {
       const ctx = makeCtx({});
       await approvedInvoice(ctx);
-      await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001');
-      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'icici-001')).to.be.rejectedWith(/already assigned/);
+      await cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001', 'LenderMSP');
+      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'icici-001', 'LenderMSP')).to.be.rejectedWith(/already assigned/);
     });
 
     it('rejects assigning a Submitted (unapproved) invoice', async () => {
       const ctx = makeCtx({});
       await seedPoAndGrn(ctx);
-      await cc.submitInvoice(ctx, JSON.stringify(validInvoice));
-      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001')).to.be.rejectedWith(/Illegal invoice transition/);
+      await submitInvoice(ctx, validInvoice);
+      await expect(cc.assignInvoice(ctx, validInvoice.invoice_id, 'hdfc-001', 'LenderMSP')).to.be.rejectedWith(/Illegal invoice transition/);
     });
   });
 });
