@@ -46,6 +46,17 @@ describe('GET /api/bridge/status', () => {
     expect(res.body.data.lease_holder).toBe('worker-a');
     expect(res.body.data.fabric.checkpoint).toBe('42');
     expect(res.body.data.dead_letters).toBe(0);
+    // Durable, so it survives a restart. An in-process timestamp reported null
+    // after every restart — including the one you most want to know about,
+    // because a stuck bridge then looks exactly like one that just came up.
+    expect(res.body.data.last_progress_at).toBeTruthy();
+    expect(res.body.data.seconds_since_progress).toBeGreaterThanOrEqual(0);
+  });
+
+  it('reports no progress timestamp before the bridge has ever advanced', async () => {
+    const res = await platform.get('/api/bridge/status');
+    expect(res.body.data.last_progress_at).toBe(null);
+    expect(res.body.data.seconds_since_progress).toBe(null);
   });
 
   it('answers 503 when the bridge is not running in this process', async () => {

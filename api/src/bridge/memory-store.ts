@@ -10,7 +10,7 @@ import { BridgeStore, ClaimResult, DeadLetterRecord, InboxEntry } from './store.
 // should select it in production; see requireStore() in index.ts.
 export class MemoryBridgeStore implements BridgeStore {
   private inbox = new Map<string, InboxEntry>();
-  private checkpoints = new Map<string, string>();
+  private checkpoints = new Map<string, { position: string; updated_at: string }>();
   private dead = new Map<string, DeadLetterRecord>();
   private leases = new Map<string, { owner: string; expires: number }>();
   private seq = 0;
@@ -76,11 +76,15 @@ export class MemoryBridgeStore implements BridgeStore {
   }
 
   async checkpoint(stream: string): Promise<string | null> {
-    return this.checkpoints.get(stream) ?? null;
+    return this.checkpoints.get(stream)?.position ?? null;
   }
 
   async setCheckpoint(stream: string, position: string): Promise<void> {
-    this.checkpoints.set(stream, position);
+    this.checkpoints.set(stream, { position, updated_at: this.now() });
+  }
+
+  async checkpointUpdatedAt(stream: string): Promise<string | null> {
+    return this.checkpoints.get(stream)?.updated_at ?? null;
   }
 
   async listDeadLetters(limit: number): Promise<DeadLetterRecord[]> {

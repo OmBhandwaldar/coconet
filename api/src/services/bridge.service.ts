@@ -131,28 +131,58 @@ async function advanceCheckpoint(store: BridgeStore, stream: string, block: bigi
   const current = await store.checkpoint(stream);
   if (current !== null && BigInt(current) >= block) return;
   await store.setCheckpoint(stream, block.toString());
-  lastProgressAt = new Date().toISOString();
 }
+
+// EscrowVault status values, in the vault's own order.
+const ESCROW_FUNDED = 2;
+/** Released, Refunded, Reversed — settled, with nothing left for the bridge. */
+const ESCROW_SETTLED = new Set([3, 4, 5]);
 
 /**
  * Flip the invoiceApproved condition, then release if every condition holds.
  *
- * Both calls are safe to repeat, which is what makes a retry after a partial
- * failure sound: the vault's own state decides whether there is anything left to
- * do, so the on-chain state — not this process's memory — is the judge.
+ * It reads the escrow FIRST, because the vault's calls are not in fact safe to
+ * repeat blindly — markInvoiceApproved reverts with "EscrowVault: bad status" on
+ * an escrow that has already settled. So repeatability is established by looking
+ * at what has already happened rather than assumed:
+ *
+ *   settled already     nothing to do; this is success, not failure
+ *   condition already set   skip the mark, which would revert, and go to release
+ *   funded + approved   release
+ *
+ * This matters on every cold start, not just in theory. The first live run
+ * replayed the chain from block 0, redelivered five historical approvals whose
+ * escrows were long since released, and dead-lettered all five — each having
+ * burned its full retry budget on a call that could never succeed.
  */
 export async function handleInvoiceApproved(escrowId: string, invoiceId: string): Promise<void> {
   const vault = vaultContract();
+  const before = await vault.getEscrow(escrowId);
+  const status = Number(before.status);
 
-  await withRetry(async () => (await vault.markInvoiceApproved(escrowId)).wait(), {
-    label: `markInvoiceApproved ${escrowId}`,
-    attempts: 2,
-  });
-  logger.info({ escrowId, invoiceId }, 'Bridge: marked invoiceApproved on Polygon escrow');
+  if (ESCROW_SETTLED.has(status)) {
+    logger.debug(
+      { escrowId, invoiceId, status },
+      'Bridge: escrow already settled — approval needs no action',
+    );
+    return;
+  }
 
+  if (!before.invoiceApproved) {
+    await withRetry(async () => (await vault.markInvoiceApproved(escrowId)).wait(), {
+      label: `markInvoiceApproved ${escrowId}`,
+      attempts: 2,
+    });
+    logger.info({ escrowId, invoiceId }, 'Bridge: marked invoiceApproved on Polygon escrow');
+  } else {
+    logger.debug({ escrowId, invoiceId }, 'Bridge: invoiceApproved already set — not re-marking');
+  }
+
+  // Re-read: the mark above changed it, and on the skip path the values we have
+  // may predate whatever set the condition.
   const e = await vault.getEscrow(escrowId);
-  // status 2 == Funded; release needs funded + invoiceApproved (Rule-0A + Rule-0B).
-  if (Number(e.status) === 2 && e.funded && e.invoiceApproved) {
+  // Release needs funded + invoiceApproved (Rule-0A + Rule-0B).
+  if (Number(e.status) === ESCROW_FUNDED && e.funded && e.invoiceApproved) {
     await withRetry(async () => (await vault.release(escrowId)).wait(), {
       label: `release ${escrowId}`,
       attempts: 2,
@@ -413,9 +443,6 @@ async function retryLoop(store: BridgeStore, shouldStop: () => boolean): Promise
 
 // ─── Observability ────────────────────────────────────────────────────────────
 
-/** Set every time a delivery or a deliberate skip moves the stream forward. */
-let lastProgressAt: string | null = null;
-
 export interface BridgeStatus {
   leader: boolean;
   owner: string | null;
@@ -427,23 +454,29 @@ export interface BridgeStatus {
   /**
    * Seconds since the bridge last moved forward. This is the number to alert on.
    *
+   * Read from the checkpoint's own updated_at, not an in-process timestamp. The
+   * first version used a module-level variable and reported null after every
+   * restart — including the restart you most want to know about, since a stuck
+   * bridge then looks exactly like one that has just come up.
+   *
    * Deliberately not "blocks behind the chain head": the bridge's own stream is
-   * what observes the head, so comparing its checkpoint to it would measure
+   * what observes the head, so comparing its checkpoint to that measures
    * nothing. Reading the true height needs qscc GetChainInfo, whose response is
    * protobuf — a real gap, recorded rather than papered over with a number that
-   * is always zero. Staleness and the reconciliation job below cover the same
+   * would always be zero. Staleness plus the reconciliation job cover the same
    * ground without pretending otherwise.
    */
   seconds_since_progress: number | null;
 }
 
 export async function bridgeStatus(store: BridgeStore, handle?: BridgeHandle): Promise<BridgeStatus> {
-  const [fabricCheckpoint, polygonCheckpoint, pending, dead, holder] = await Promise.all([
+  const [fabricCheckpoint, polygonCheckpoint, pending, dead, holder, progressAt] = await Promise.all([
     store.checkpoint(FABRIC_STREAM),
     store.checkpoint(POLYGON_STREAM),
     store.dueForRetry(FABRIC_STREAM, 1_000),
     store.listDeadLetters(1_000),
     store.leaseOwner(LEASE),
+    store.checkpointUpdatedAt(FABRIC_STREAM),
   ]);
 
   return {
@@ -453,10 +486,10 @@ export async function bridgeStatus(store: BridgeStore, handle?: BridgeHandle): P
     fabric: { checkpoint: fabricCheckpoint, pending_retries: pending.length },
     polygon: { checkpoint: polygonCheckpoint },
     dead_letters: dead.length,
-    last_progress_at: lastProgressAt,
-    seconds_since_progress: lastProgressAt === null
+    last_progress_at: progressAt,
+    seconds_since_progress: progressAt === null
       ? null
-      : Math.round((Date.now() - Date.parse(lastProgressAt)) / 1000),
+      : Math.round((Date.now() - Date.parse(progressAt)) / 1000),
   };
 }
 

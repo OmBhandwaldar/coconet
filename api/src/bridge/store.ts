@@ -90,6 +90,14 @@ export interface BridgeStore {
 
   checkpoint(stream: string): Promise<string | null>;
   setCheckpoint(stream: string, position: string): Promise<void>;
+  /**
+   * When the checkpoint last moved, as an ISO string.
+   *
+   * Durable, unlike the in-process timestamp this replaced: that reported null
+   * after every restart — including the restart you most want to know about,
+   * because a bridge that is stuck looks exactly like one that just started.
+   */
+  checkpointUpdatedAt(stream: string): Promise<string | null>;
 
   listDeadLetters(limit: number): Promise<DeadLetterRecord[]>;
   /** Clear a dead letter and reopen its inbox entry so it is retried. */

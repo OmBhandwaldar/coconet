@@ -1,10 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Stable vault mock so we can assert the bridge's cross-chain calls.
+// A stateful vault mock: the handler reads the escrow to decide what is left to
+// do, so marking has to flip the condition the way the contract does.
+const escrow = { funded: true, invoiceApproved: false, status: 2n };
 const vaultMock = {
-  markInvoiceApproved: vi.fn(async () => ({ wait: async () => ({}) })),
+  markInvoiceApproved: vi.fn(async () => {
+    escrow.invoiceApproved = true;
+    return { wait: async () => ({}) };
+  }),
   release: vi.fn(async () => ({ wait: async () => ({}) })),
-  getEscrow: vi.fn(async () => ({ funded: true, invoiceApproved: true, status: 2n })),
+  getEscrow: vi.fn(async () => ({ ...escrow })),
 };
 vi.mock('../polygon/escrow.client.js', () => ({
   vaultContract: () => vaultMock,
@@ -15,20 +20,20 @@ vi.mock('../polygon/escrow.client.js', () => ({
 const { handleInvoiceApproved } = await import('../services/bridge.service.js');
 
 beforeEach(() => {
+  Object.assign(escrow, { funded: true, invoiceApproved: false, status: 2n });
   vaultMock.markInvoiceApproved.mockClear();
   vaultMock.release.mockClear();
 });
 
 describe('bridge: Fabric InvoiceApproved → Polygon', () => {
   it('marks the condition and releases when funded + approved', async () => {
-    vaultMock.getEscrow.mockResolvedValueOnce({ funded: true, invoiceApproved: true, status: 2n });
     await handleInvoiceApproved('ESC-01', 'BS-INV-ESCROW-02');
     expect(vaultMock.markInvoiceApproved).toHaveBeenCalledTimes(1);
     expect(vaultMock.release).toHaveBeenCalledTimes(1);
   });
 
   it('marks the condition but does NOT release when the escrow is not yet funded', async () => {
-    vaultMock.getEscrow.mockResolvedValueOnce({ funded: false, invoiceApproved: true, status: 1n });
+    Object.assign(escrow, { funded: false, invoiceApproved: false, status: 1n });
     await handleInvoiceApproved('ESC-02', 'BS-INV-OTHER');
     expect(vaultMock.markInvoiceApproved).toHaveBeenCalledTimes(1);
     expect(vaultMock.release).not.toHaveBeenCalled();

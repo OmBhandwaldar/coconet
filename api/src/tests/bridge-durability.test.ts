@@ -12,10 +12,42 @@ import { MemoryBridgeStore } from '../bridge/memory-store.js';
 // and retry are claims about *sequences* of calls, and a mocked store returns
 // whatever the test tells it to — which would prove nothing about either.
 
+// A STATEFUL vault, keyed per escrow, not a stub returning fixed values. The
+// handler now reads the escrow to decide what is left to do, so a mock that
+// always reports the same state would let a test encode an assumption about call
+// order instead of checking behaviour. Marking flips the condition and releasing
+// settles it, exactly as the contract does — and each escrow has its own state,
+// or one release would make every other escrow look settled.
+interface EscrowState { funded: boolean; invoiceApproved: boolean; status: bigint }
+const vault = new Map<string, EscrowState>();
+const freshEscrow = (): EscrowState => ({ funded: true, invoiceApproved: false, status: 2n });
+const escrowState = (id: string): EscrowState => {
+  const existing = vault.get(id);
+  if (existing) return existing;
+  const created = freshEscrow();
+  vault.set(id, created);
+  return created;
+};
+/** Put one escrow in a specific state before the handler sees it. */
+const setEscrow = (id: string, state: Partial<EscrowState>) =>
+  Object.assign(escrowState(id), state);
+
+/** The real mark: flips the condition. Restored after a test makes it fail. */
+const markSucceeds = async (id: string) => {
+  escrowState(id).invoiceApproved = true;
+  return { wait: async () => ({}) };
+};
+
 const vaultMock = {
-  markInvoiceApproved: vi.fn(async () => ({ wait: async () => ({}) })),
-  release: vi.fn(async () => ({ wait: async () => ({}) })),
-  getEscrow: vi.fn(async () => ({ funded: true, invoiceApproved: true, status: 2n })),
+  markInvoiceApproved: vi.fn(async (id: string) => {
+    escrowState(id).invoiceApproved = true;
+    return { wait: async () => ({}) };
+  }),
+  release: vi.fn(async (id: string) => {
+    escrowState(id).status = 3n;
+    return { wait: async () => ({}) };
+  }),
+  getEscrow: vi.fn(async (id: string) => ({ ...escrowState(id) })),
 };
 vi.mock('../polygon/escrow.client.js', () => ({
   vaultContract: () => vaultMock,
@@ -45,9 +77,13 @@ let store: MemoryBridgeStore;
 
 beforeEach(() => {
   store = new MemoryBridgeStore();
-  vaultMock.markInvoiceApproved.mockReset().mockResolvedValue({ wait: async () => ({}) });
-  vaultMock.release.mockReset().mockResolvedValue({ wait: async () => ({}) });
-  vaultMock.getEscrow.mockReset().mockResolvedValue({ funded: true, invoiceApproved: true, status: 2n });
+  vault.clear();
+  vaultMock.markInvoiceApproved.mockClear().mockImplementation(markSucceeds);
+  vaultMock.release.mockClear().mockImplementation(async (id: string) => {
+    escrowState(id).status = 3n;
+    return { wait: async () => ({}) };
+  });
+  vaultMock.getEscrow.mockClear().mockImplementation(async (id: string) => ({ ...escrowState(id) }));
 });
 
 describe('idempotency — the same event twice releases once', () => {
@@ -85,7 +121,7 @@ describe('retry — a failed Polygon write is not lost', () => {
   it('absorbs a one-off RPC failure inside the delivery', async () => {
     vaultMock.markInvoiceApproved
       .mockRejectedValueOnce(new Error('nonce too low'))
-      .mockResolvedValue({ wait: async () => ({}) });
+      .mockImplementation(markSucceeds);
 
     await deliverFabricEvent(store, invoiceApproved('INV-1', 'tx-aaa'));
 
@@ -110,7 +146,7 @@ describe('retry — a failed Polygon write is not lost', () => {
     const event = invoiceApproved('INV-1', 'tx-aaa');
     await deliverFabricEvent(store, event);                              // fails
 
-    vaultMock.markInvoiceApproved.mockResolvedValue({ wait: async () => ({}) });
+    vaultMock.markInvoiceApproved.mockImplementation(markSucceeds);
     await deliverFabricEvent(store, event);                              // retried, succeeds
     await deliverFabricEvent(store, event);                              // duplicate
 
@@ -151,7 +187,7 @@ describe('retry — a failed Polygon write is not lost', () => {
     await deliverFabricEvent(store, invoiceApproved('INV-1', 'tx-aaa', 42n));
     expect(await store.checkpoint(FABRIC_STREAM)).to.equal(null);
 
-    vaultMock.markInvoiceApproved.mockResolvedValue({ wait: async () => ({}) });
+    vaultMock.markInvoiceApproved.mockImplementation(markSucceeds);
     const [entry] = await store.dueForRetry(FABRIC_STREAM, 10);
     expect(await retryStoredFailure(store, entry)).to.equal('done');
 
@@ -164,12 +200,62 @@ describe('retry — a failed Polygon write is not lost', () => {
     const event = invoiceApproved('INV-1', 'tx-aaa');
     for (let i = 0; i < 4; i++) await deliverFabricEvent(store, event, { maxAttempts: 3 });
 
-    vaultMock.markInvoiceApproved.mockResolvedValue({ wait: async () => ({}) });
+    vaultMock.markInvoiceApproved.mockImplementation(markSucceeds);
     expect(await store.reopenDeadLetter(`${FABRIC_STREAM}:tx-aaa:InvoiceApproved`)).to.equal(true);
     await deliverFabricEvent(store, event);
 
     expect(vaultMock.release).toHaveBeenCalledTimes(1);
     expect(await store.listDeadLetters(10)).toHaveLength(0);
+  });
+});
+
+describe('an already-settled escrow is nothing to do, not a failure', () => {
+  // Found by running this against the live stack. A cold checkpoint replays the
+  // whole chain, so every historical approval is redelivered — and the escrows
+  // behind them are long since released. markInvoiceApproved reverts on a
+  // settled escrow ("EscrowVault: bad status"), so five old demo runs each burned
+  // their full retry budget and dead-lettered.
+  //
+  // The handler claimed its calls were safe to repeat. They are not: the vault
+  // reverts. Repeatability has to be established by READING the vault first,
+  // which is what "the on-chain state is the judge" actually requires.
+  it('skips an escrow already released', async () => {
+    setEscrow('ESC-INV-OLD', { invoiceApproved: true, status: 3n });
+
+    await deliverFabricEvent(store, invoiceApproved('INV-OLD', 'tx-old', 10n));
+
+    expect(vaultMock.markInvoiceApproved).not.toHaveBeenCalled();
+    expect(vaultMock.release).not.toHaveBeenCalled();
+    // And it counts as handled, so it neither retries nor dead-letters.
+    expect((await store.getEntry(`${FABRIC_STREAM}:tx-old:InvoiceApproved`))?.status).to.equal('done');
+    expect(await store.listDeadLetters(10)).toHaveLength(0);
+    expect(await store.checkpoint(FABRIC_STREAM)).to.equal('10');
+  });
+
+  it('skips an escrow already refunded', async () => {
+    setEscrow('ESC-INV-REF', { funded: false, status: 4n });
+    await deliverFabricEvent(store, invoiceApproved('INV-REF', 'tx-ref', 11n));
+
+    expect(vaultMock.markInvoiceApproved).not.toHaveBeenCalled();
+    expect((await store.getEntry(`${FABRIC_STREAM}:tx-ref:InvoiceApproved`))?.status).to.equal('done');
+  });
+
+  it('does not re-mark a condition already set, but still releases', async () => {
+    // Recovering from a crash between the mark and the release: the mark would
+    // revert, so it must be skipped while the release still has to happen.
+    setEscrow('ESC-INV-HALF', { invoiceApproved: true, status: 2n });
+
+    await deliverFabricEvent(store, invoiceApproved('INV-HALF', 'tx-half', 12n));
+
+    expect(vaultMock.markInvoiceApproved).not.toHaveBeenCalled();
+    expect(vaultMock.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks and releases when nothing has been done yet', async () => {
+    await deliverFabricEvent(store, invoiceApproved('INV-NEW', 'tx-new', 13n));
+
+    expect(vaultMock.markInvoiceApproved).toHaveBeenCalledTimes(1);
+    expect(vaultMock.release).toHaveBeenCalledTimes(1);
   });
 });
 

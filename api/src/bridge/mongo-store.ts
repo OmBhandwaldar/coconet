@@ -180,6 +180,11 @@ export class MongoBridgeStore implements BridgeStore {
     );
   }
 
+  async checkpointUpdatedAt(stream: string): Promise<string | null> {
+    const d = await this.db.collection<CheckpointDoc>(CHECKPOINTS).findOne({ _id: stream });
+    return d?.updated_at?.toISOString() ?? null;
+  }
+
   async listDeadLetters(limit: number): Promise<DeadLetterRecord[]> {
     const docs = await this.db.collection<DeadLetterDoc>(DEAD_LETTERS)
       .find({}).sort({ failed_at: -1 }).limit(limit).toArray();
