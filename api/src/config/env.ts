@@ -68,6 +68,19 @@ const schema = z.object({
   // JSON array of directory users with scrypt secret hashes. REQUIRED in
   // production — without it the API refuses to start on the dev seed.
   AUTH_USERS: z.string().optional(),
+
+  // ─── Bridge durability (Block 6) ────────────────────────────────────────────
+  // How long the active-bridge lease is held before it must be renewed. A
+  // crashed leader blocks failover for at most this long, so it trades failover
+  // latency against how often every replica writes to the store.
+  BRIDGE_LEASE_TTL_MS: z.coerce.number().default(30_000),
+  // How often stored failures are re-attempted.
+  BRIDGE_RETRY_INTERVAL_MS: z.coerce.number().default(30_000),
+  // Deliveries per event before it is dead-lettered for an operator.
+  BRIDGE_MAX_ATTEMPTS: z.coerce.number().default(5),
+  // Allow an in-memory bridge store — NOT durable, so a restart loses the
+  // checkpoint and the inbox. Development only; refused in production.
+  BRIDGE_ALLOW_MEMORY_STORE: z.string().default('false').transform((v) => v.toLowerCase() === 'true'),
 });
 
 const parsed = schema.safeParse(process.env);
