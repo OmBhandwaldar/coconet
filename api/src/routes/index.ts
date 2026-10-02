@@ -8,6 +8,7 @@ import escrowRouter from './escrow.route.js';
 import activityRouter from './activity.route.js';
 import paymentRouter from './payment.route.js';
 import approvalsRouter from './approvals.route.js';
+import bridgeRouter from './bridge.route.js';
 import { authenticate } from '../middleware/auth.middleware.js';
 import { enforceReadOnlyForObservers } from '../middleware/rbac.middleware.js';
 
@@ -29,5 +30,6 @@ router.use('/escrow', escrowRouter);
 router.use('/activity', activityRouter);
 router.use('/payments', paymentRouter);
 router.use('/approvals', approvalsRouter);
+router.use('/bridge', bridgeRouter);
 
 export default router;

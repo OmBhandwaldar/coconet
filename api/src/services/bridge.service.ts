@@ -131,6 +131,7 @@ async function advanceCheckpoint(store: BridgeStore, stream: string, block: bigi
   const current = await store.checkpoint(stream);
   if (current !== null && BigInt(current) >= block) return;
   await store.setCheckpoint(stream, block.toString());
+  lastProgressAt = new Date().toISOString();
 }
 
 /**
@@ -410,19 +411,142 @@ async function retryLoop(store: BridgeStore, shouldStop: () => boolean): Promise
   }
 }
 
-/** Blocks behind the chain head, per stream — the number to alert on. */
-export async function bridgeLag(store: BridgeStore, fabricHead?: bigint): Promise<{
-  fabric: { checkpoint: string | null; head: string | null; lag: number | null };
-}> {
-  const checkpoint = await store.checkpoint(FABRIC_STREAM);
-  const lag = checkpoint !== null && fabricHead !== undefined
-    ? Number(fabricHead - BigInt(checkpoint))
-    : null;
+// ─── Observability ────────────────────────────────────────────────────────────
+
+/** Set every time a delivery or a deliberate skip moves the stream forward. */
+let lastProgressAt: string | null = null;
+
+export interface BridgeStatus {
+  leader: boolean;
+  owner: string | null;
+  lease_holder: string | null;
+  fabric: { checkpoint: string | null; pending_retries: number };
+  polygon: { checkpoint: string | null };
+  dead_letters: number;
+  last_progress_at: string | null;
+  /**
+   * Seconds since the bridge last moved forward. This is the number to alert on.
+   *
+   * Deliberately not "blocks behind the chain head": the bridge's own stream is
+   * what observes the head, so comparing its checkpoint to it would measure
+   * nothing. Reading the true height needs qscc GetChainInfo, whose response is
+   * protobuf — a real gap, recorded rather than papered over with a number that
+   * is always zero. Staleness and the reconciliation job below cover the same
+   * ground without pretending otherwise.
+   */
+  seconds_since_progress: number | null;
+}
+
+export async function bridgeStatus(store: BridgeStore, handle?: BridgeHandle): Promise<BridgeStatus> {
+  const [fabricCheckpoint, polygonCheckpoint, pending, dead, holder] = await Promise.all([
+    store.checkpoint(FABRIC_STREAM),
+    store.checkpoint(POLYGON_STREAM),
+    store.dueForRetry(FABRIC_STREAM, 1_000),
+    store.listDeadLetters(1_000),
+    store.leaseOwner(LEASE),
+  ]);
+
   return {
-    fabric: {
-      checkpoint,
-      head: fabricHead?.toString() ?? null,
-      lag,
-    },
+    leader: handle?.isLeader() ?? false,
+    owner: handle?.owner ?? null,
+    lease_holder: holder,
+    fabric: { checkpoint: fabricCheckpoint, pending_retries: pending.length },
+    polygon: { checkpoint: polygonCheckpoint },
+    dead_letters: dead.length,
+    last_progress_at: lastProgressAt,
+    seconds_since_progress: lastProgressAt === null
+      ? null
+      : Math.round((Date.now() - Date.parse(lastProgressAt)) / 1000),
   };
+}
+
+// ─── Reconciliation ───────────────────────────────────────────────────────────
+
+export type DriftKind =
+  | 'invoice_approved_condition_not_set'
+  | 'conditions_met_not_released'
+  | 'released_without_invoice_approval';
+
+export interface Drift {
+  kind: DriftKind;
+  escrow_payment_id: string;
+  invoice_id: string;
+  invoice_status: string;
+  escrow_status: number;
+  detail: string;
+}
+
+/**
+ * Compare both chains and report what the bridge should have done and has not.
+ *
+ * This is the check that catches what the inbox cannot: an event the bridge never
+ * received at all. Retries only cover deliveries that arrived and failed — a
+ * missed subscription window, or a dead letter nobody actioned, leaves the chains
+ * disagreeing with nothing in the inbox to show for it.
+ *
+ * It reads Polygon's escrow instructions as the index, because the factory's
+ * event log is an enumerable list of every escrow and Fabric has no "list
+ * invoices" query to iterate from.
+ */
+export async function reconcile(invoiceStatus: (id: string) => Promise<string>): Promise<Drift[]> {
+  const factory = factoryContract();
+  const vault = vaultContract();
+  const drift: Drift[] = [];
+
+  const created = await factory.queryFilter('EscrowInstructionCreated');
+  for (const ev of created) {
+    const args = (ev as { args?: { escrowPaymentId: string; linkedAssetId: string } }).args;
+    if (!args) continue;
+    const { escrowPaymentId, linkedAssetId: invoiceId } = args;
+
+    let status: string;
+    try {
+      status = await invoiceStatus(invoiceId);
+    } catch (err) {
+      logger.warn({ invoiceId, err: (err as Error).message }, 'Reconcile: could not read invoice');
+      continue;
+    }
+
+    const e = await vault.getEscrow(escrowPaymentId);
+    const escrowStatus = Number(e.status);
+    const approved = status === 'Approved' || status === 'Assigned' || status === 'Settled';
+
+    if (approved && !e.invoiceApproved) {
+      drift.push({
+        kind: 'invoice_approved_condition_not_set',
+        escrow_payment_id: escrowPaymentId, invoice_id: invoiceId,
+        invoice_status: status, escrow_status: escrowStatus,
+        detail: 'Fabric approved the invoice but the Polygon condition was never flipped',
+      });
+      continue;
+    }
+    // 2 == Funded. Still Funded with every condition true means the release call
+    // did not land, which is money sitting in the vault that should have moved.
+    if (escrowStatus === 2 && e.funded && e.invoiceApproved) {
+      drift.push({
+        kind: 'conditions_met_not_released',
+        escrow_payment_id: escrowPaymentId, invoice_id: invoiceId,
+        invoice_status: status, escrow_status: escrowStatus,
+        detail: 'Every release condition holds but the escrow is still Funded',
+      });
+      continue;
+    }
+    // 3 == Released. Released without Fabric having approved would mean the
+    // condition was set from somewhere other than an approval.
+    if (escrowStatus === 3 && !approved) {
+      drift.push({
+        kind: 'released_without_invoice_approval',
+        escrow_payment_id: escrowPaymentId, invoice_id: invoiceId,
+        invoice_status: status, escrow_status: escrowStatus,
+        detail: `Escrow released while the invoice is ${status}`,
+      });
+    }
+  }
+
+  if (drift.length) {
+    logger.error({ drift: drift.length, kinds: drift.map((d) => d.kind) }, 'Reconcile: chains disagree');
+  } else {
+    logger.info({ escrows: created.length }, 'Reconcile: chains agree');
+  }
+  return drift;
 }

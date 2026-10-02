@@ -5,6 +5,7 @@ import { connectGateway, disconnectGateway } from './fabric/gateway.js';
 import { connectPolygon } from './polygon/provider.js';
 import { startBridge, type BridgeHandle } from './services/bridge.service.js';
 import { openBridgeStore } from './bridge/index.js';
+import { setBridgeRuntime } from './bridge/runtime.js';
 import type { BridgeStore } from './bridge/store.js';
 import { startActivityFeed } from './services/activity-feed.service.js';
 import { assertSafe } from './auth/users.js';
@@ -56,6 +57,7 @@ async function bootstrap(): Promise<void> {
     try {
       bridgeStore = await openBridgeStore();
       bridge = startBridge(bridgeStore);
+      setBridgeRuntime(bridgeStore, bridge);
     } catch (err) {
       logger.error({ err: (err as Error).message }, 'Bridge failed to start');
     }
