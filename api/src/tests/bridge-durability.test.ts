@@ -28,7 +28,8 @@ vi.mock('../services/escrow.service.js', () => ({
   rebuildInvoiceLinks: vi.fn(async () => 0),
 }));
 
-const { deliverFabricEvent, FABRIC_STREAM } = await import('../services/bridge.service.js');
+const { deliverFabricEvent, retryStoredFailure, FABRIC_STREAM } =
+  await import('../services/bridge.service.js');
 
 /** A Fabric chaincode event as the gateway delivers it. */
 function invoiceApproved(invoiceId: string, txId: string, blockNumber = 42n) {
@@ -44,9 +45,9 @@ let store: MemoryBridgeStore;
 
 beforeEach(() => {
   store = new MemoryBridgeStore();
-  vaultMock.markInvoiceApproved.mockClear();
-  vaultMock.release.mockClear();
-  vaultMock.getEscrow.mockResolvedValue({ funded: true, invoiceApproved: true, status: 2n });
+  vaultMock.markInvoiceApproved.mockReset().mockResolvedValue({ wait: async () => ({}) });
+  vaultMock.release.mockReset().mockResolvedValue({ wait: async () => ({}) });
+  vaultMock.getEscrow.mockReset().mockResolvedValue({ funded: true, invoiceApproved: true, status: 2n });
 });
 
 describe('idempotency — the same event twice releases once', () => {
@@ -77,8 +78,23 @@ describe('idempotency — the same event twice releases once', () => {
 });
 
 describe('retry — a failed Polygon write is not lost', () => {
-  it('leaves the event eligible for retry rather than marking it done', async () => {
-    vaultMock.markInvoiceApproved.mockRejectedValueOnce(new Error('nonce too low'));
+  // Two layers of retry, deliberately. withRetry() absorbs ONE flaky RPC call
+  // inside a single delivery; the durable inbox is what survives a chain that is
+  // down for longer than that, and a restart. The tests below distinguish them,
+  // because a single-shot rejection never reaches the durable layer at all.
+  it('absorbs a one-off RPC failure inside the delivery', async () => {
+    vaultMock.markInvoiceApproved
+      .mockRejectedValueOnce(new Error('nonce too low'))
+      .mockResolvedValue({ wait: async () => ({}) });
+
+    await deliverFabricEvent(store, invoiceApproved('INV-1', 'tx-aaa'));
+
+    expect(vaultMock.release).toHaveBeenCalledTimes(1);
+    expect((await store.getEntry(`${FABRIC_STREAM}:tx-aaa:InvoiceApproved`))?.status).to.equal('done');
+  });
+
+  it('leaves a persistently failing event eligible for retry, not done', async () => {
+    vaultMock.markInvoiceApproved.mockRejectedValue(new Error('rpc unreachable'));
     const event = invoiceApproved('INV-1', 'tx-aaa');
 
     await deliverFabricEvent(store, event);
@@ -86,16 +102,17 @@ describe('retry — a failed Polygon write is not lost', () => {
 
     const entry = await store.getEntry(`${FABRIC_STREAM}:tx-aaa:InvoiceApproved`);
     expect(entry?.status).to.equal('failed');
-    expect(entry?.error).toMatch(/nonce too low/);
+    expect(entry?.error).toMatch(/rpc unreachable/);
   });
 
-  it('completes on a later attempt, and only releases once in total', async () => {
-    vaultMock.markInvoiceApproved.mockRejectedValueOnce(new Error('nonce too low'));
+  it('recovers on a later delivery, and releases exactly once in total', async () => {
+    vaultMock.markInvoiceApproved.mockRejectedValue(new Error('rpc unreachable'));
     const event = invoiceApproved('INV-1', 'tx-aaa');
+    await deliverFabricEvent(store, event);                              // fails
 
-    await deliverFabricEvent(store, event);   // fails
-    await deliverFabricEvent(store, event);   // retried, succeeds
-    await deliverFabricEvent(store, event);   // duplicate
+    vaultMock.markInvoiceApproved.mockResolvedValue({ wait: async () => ({}) });
+    await deliverFabricEvent(store, event);                              // retried, succeeds
+    await deliverFabricEvent(store, event);                              // duplicate
 
     expect(vaultMock.release).toHaveBeenCalledTimes(1);
     expect((await store.getEntry(`${FABRIC_STREAM}:tx-aaa:InvoiceApproved`))?.status).to.equal('done');
@@ -105,14 +122,41 @@ describe('retry — a failed Polygon write is not lost', () => {
     vaultMock.markInvoiceApproved.mockRejectedValue(new Error('vault reverted'));
     const event = invoiceApproved('INV-1', 'tx-aaa');
 
-    for (let i = 0; i < 6; i++) await deliverFabricEvent(store, event, { maxAttempts: 3 });
+    for (let i = 0; i < 3; i++) await deliverFabricEvent(store, event, { maxAttempts: 3 });
+    const callsWhenDead = vaultMock.markInvoiceApproved.mock.calls.length;
 
     const dead = await store.listDeadLetters(10);
     expect(dead).toHaveLength(1);
     expect(dead[0].key).to.equal(`${FABRIC_STREAM}:tx-aaa:InvoiceApproved`);
     expect(dead[0].attempts).to.equal(3);
-    // And it stops being attempted once dead.
-    expect(vaultMock.markInvoiceApproved).toHaveBeenCalledTimes(3);
+
+    // A dead event stops costing RPC calls — the point of a budget.
+    for (let i = 0; i < 3; i++) await deliverFabricEvent(store, event, { maxAttempts: 3 });
+    expect(vaultMock.markInvoiceApproved.mock.calls.length).to.equal(callsWhenDead);
+  });
+
+  it('keeps enough of the event to retry it without the stream', async () => {
+    // The stream does not go backwards, so a stored failure that cannot be
+    // re-executed from its own payload can only wait for a reconnect.
+    vaultMock.markInvoiceApproved.mockRejectedValue(new Error('rpc unreachable'));
+    await deliverFabricEvent(store, invoiceApproved('INV-1', 'tx-aaa', 42n));
+
+    const [entry] = await store.dueForRetry(FABRIC_STREAM, 10);
+    expect(entry.payload?.invoice_id).to.equal('INV-1');
+    expect(entry.payload?.block_number).to.equal('42');
+  });
+
+  it('re-executes a stored failure from its payload and advances the checkpoint', async () => {
+    vaultMock.markInvoiceApproved.mockRejectedValue(new Error('rpc unreachable'));
+    await deliverFabricEvent(store, invoiceApproved('INV-1', 'tx-aaa', 42n));
+    expect(await store.checkpoint(FABRIC_STREAM)).to.equal(null);
+
+    vaultMock.markInvoiceApproved.mockResolvedValue({ wait: async () => ({}) });
+    const [entry] = await store.dueForRetry(FABRIC_STREAM, 10);
+    expect(await retryStoredFailure(store, entry)).to.equal('done');
+
+    expect(vaultMock.release).toHaveBeenCalledTimes(1);
+    expect(await store.checkpoint(FABRIC_STREAM)).to.equal('42');
   });
 
   it('reopens a dead letter for another attempt when an operator asks', async () => {
@@ -145,7 +189,7 @@ describe('checkpointing — a restart resumes instead of skipping', () => {
 
   it('does NOT advance it past an event that failed', async () => {
     // Advancing here is how a failed delivery becomes a permanently lost one.
-    vaultMock.markInvoiceApproved.mockRejectedValueOnce(new Error('rpc down'));
+    vaultMock.markInvoiceApproved.mockRejectedValue(new Error('rpc down'));
     await store.setCheckpoint(FABRIC_STREAM, '41');
     await deliverFabricEvent(store, invoiceApproved('INV-1', 'tx-aaa', 42n));
 
