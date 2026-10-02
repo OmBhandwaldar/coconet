@@ -53,7 +53,7 @@ async function bootstrap(): Promise<void> {
   // failed deliveries is worse than an absent one, because it looks healthy.
   let bridgeStore: BridgeStore | null = null;
   let bridge: BridgeHandle | null = null;
-  if (fabricOk && polygonOk && env.ESCROW_VAULT_ADDRESS) {
+  if (env.BRIDGE_IN_API && fabricOk && polygonOk && env.ESCROW_VAULT_ADDRESS) {
     try {
       bridgeStore = await openBridgeStore();
       bridge = startBridge(bridgeStore);
@@ -61,6 +61,8 @@ async function bootstrap(): Promise<void> {
     } catch (err) {
       logger.error({ err: (err as Error).message }, 'Bridge failed to start');
     }
+  } else if (!env.BRIDGE_IN_API) {
+    logger.info('Bridge not started in the API process (BRIDGE_IN_API=false) — run npm run worker');
   }
 
   // Activity feed needs Fabric for chaincode events; Polygon events included when available.

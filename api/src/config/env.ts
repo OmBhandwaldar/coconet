@@ -81,6 +81,11 @@ const schema = z.object({
   // Allow an in-memory bridge store — NOT durable, so a restart loses the
   // checkpoint and the inbox. Development only; refused in production.
   BRIDGE_ALLOW_MEMORY_STORE: z.string().default('false').transform((v) => v.toLowerCase() === 'true'),
+  // Run the bridge inside the API process. Convenient for a single-process dev
+  // run; in production the bridge is its own worker (npm run worker), because it
+  // is a singleton and the API is horizontally scaled. Several workers may run —
+  // the lease means exactly one processes and the others stand by.
+  BRIDGE_IN_API: z.string().default('true').transform((v) => v.toLowerCase() === 'true'),
 });
 
 const parsed = schema.safeParse(process.env);

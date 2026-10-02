@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "seed": "tsx scripts/seed-orgs.ts"
+    "seed": "tsx scripts/seed-orgs.ts",
+    "worker": "tsx src/worker.ts",
+    "worker:start": "node dist/worker.js"
   },
   "dependencies": {
     "@grpc/grpc-js": "^1.10.0",
