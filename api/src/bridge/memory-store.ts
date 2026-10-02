@@ -50,6 +50,7 @@ export class MemoryBridgeStore implements BridgeStore {
     if (!e) return { attempts: 0, dead: false };
     e.error = error;
     e.updated_at = this.now();
+    if (payload) e.payload = payload;
     const dead = e.attempts >= maxAttempts;
     e.status = dead ? 'dead' : 'failed';
     if (dead) {

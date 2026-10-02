@@ -50,6 +50,14 @@ export interface InboxEntry {
   attempts: number;
   updated_at: string;
   error?: string;
+  /**
+   * Enough of the event to re-execute it without the stream.
+   *
+   * Without this, a stored failure can only be retried by the stream
+   * redelivering it — and the stream does not go backwards. The retry would sit
+   * until the next reconnect, which is not a retry policy so much as a hope.
+   */
+  payload?: Record<string, unknown>;
 }
 
 export interface BridgeStore {
