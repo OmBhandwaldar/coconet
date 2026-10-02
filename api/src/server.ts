@@ -3,7 +3,10 @@ import { logger } from './config/logger.js';
 import app from './app.js';
 import { connectGateway, disconnectGateway } from './fabric/gateway.js';
 import { connectPolygon } from './polygon/provider.js';
-import { startBridge } from './services/bridge.service.js';
+import { startBridge, type BridgeHandle } from './services/bridge.service.js';
+import { openBridgeStore } from './bridge/index.js';
+import { setBridgeRuntime } from './bridge/runtime.js';
+import type { BridgeStore } from './bridge/store.js';
 import { startActivityFeed } from './services/activity-feed.service.js';
 import { assertSafe } from './auth/users.js';
 
@@ -43,12 +46,23 @@ async function bootstrap(): Promise<void> {
   const [fabricOk, polygonOk] = await Promise.all([tryConnectFabric(), tryConnectPolygon()]);
 
   // Cross-chain bridge needs both chains; skip if either is down (API still serves).
-  if (fabricOk && polygonOk && env.ESCROW_VAULT_ADDRESS) {
+  //
+  // Its durable store is NOT optional in the same way. If both chains are up and
+  // the store is not, the bridge refuses to start rather than running without a
+  // checkpoint or an inbox — see openBridgeStore(). A bridge that silently drops
+  // failed deliveries is worse than an absent one, because it looks healthy.
+  let bridgeStore: BridgeStore | null = null;
+  let bridge: BridgeHandle | null = null;
+  if (env.BRIDGE_IN_API && fabricOk && polygonOk && env.ESCROW_VAULT_ADDRESS) {
     try {
-      startBridge();
+      bridgeStore = await openBridgeStore();
+      bridge = startBridge(bridgeStore);
+      setBridgeRuntime(bridgeStore, bridge);
     } catch (err) {
-      logger.warn({ err: (err as Error).message }, 'Bridge failed to start');
+      logger.error({ err: (err as Error).message }, 'Bridge failed to start');
     }
+  } else if (!env.BRIDGE_IN_API) {
+    logger.info('Bridge not started in the API process (BRIDGE_IN_API=false) — run npm run worker');
   }
 
   // Activity feed needs Fabric for chaincode events; Polygon events included when available.
@@ -85,11 +99,29 @@ async function bootstrap(): Promise<void> {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     logger.info('Server closed to new connections');
 
+    // Resign the lease before dropping the connections it is held over, so a
+    // standby replica takes over in seconds rather than waiting out the TTL.
+    if (bridge) {
+      try {
+        await bridge.stop();
+      } catch (err) {
+        logger.warn({ err }, 'Error stopping the bridge');
+      }
+    }
+
     if (fabricOk) {
       try {
         await disconnectGateway();
       } catch (err) {
         logger.warn({ err }, 'Error disconnecting Fabric Gateway');
+      }
+    }
+
+    if (bridgeStore) {
+      try {
+        await bridgeStore.close();
+      } catch (err) {
+        logger.warn({ err }, 'Error closing the bridge store');
       }
     }
 

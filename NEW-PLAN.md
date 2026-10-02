@@ -19,7 +19,7 @@ Block 4 implements.
 | 3 | Identity & access | `feat/harden-03-identity` | [~] Mostly done — Fabric CA outstanding |
 | 4 | Privacy (Design 2) | `feat/harden-04-privacy` | [x] Done — ABAC defers with Fabric CA |
 | 5 | Maker-checker | `feat/harden-05-maker-checker` | [x] Done |
-| 6 | Bridge durability | `feat/harden-06-bridge` | [ ] Not started |
+| 6 | Bridge durability | `feat/harden-06-bridge` | [x] Done |
 | 7 | Polygon contracts & settlement | `feat/harden-07-contracts` | [ ] Not started |
 | 8 | Missing chaincodes | `feat/harden-08-chaincodes` | [ ] Not started |
 | 9 | Platform & ops | `feat/harden-09-platform` | [ ] Not started |
@@ -41,7 +41,7 @@ What it is not is production-ready. Verified against the code:
 - **Every ledger action is attributed to one hardcoded Platform Admin**, so the audit trail cannot satisfy NFR-05.
 - **Financing terms sit on the shared channel**, violating NFR-06 — and 13 chaincode event payloads leaked amounts, quantities or free-text figures to every channel member, permanently (fixed in Block 1).
 - ~~**Maker-checker thresholds are stored but never enforced**~~ — fixed in Block 5.
-- **The bridge has no checkpointing, retries or HA story** — a failed cross-chain write is silently lost.
+- ~~**The bridge has no checkpointing, retries or HA story**~~ — fixed in Block 6.
 - Three of six chaincodes and two of four contracts do not exist.
 
 **Intended outcome:** authenticated, attributable, privacy-correct, with durable cross-chain
@@ -382,16 +382,110 @@ approving-party model; and a refusal closing the entity rather than the attempt
 
 ## Block 6 — Bridge durability
 
-- **Durable checkpointing** — persist last processed block per chain
-- **Idempotent handlers** keyed on transaction ID
-- **Retry with backoff and a dead-letter queue** — a failed Polygon write is currently lost
-- **HA** — extract from the API process to a singleton worker with leader election; keep on-chain idempotency as the safety net
-- **Complete the Polygon→Fabric audit write** — land the interface here, wire it in Block 8
-- **Bridge lag monitoring** and a reconciliation job comparing both chains
+> **[x] Done — 2 Oct 2026.** Verified against live peers and a live Polygon node:
+> a full demo run leaves zero dead letters (it produced five before the fix) and
+> reconciliation reports both chains in sync across every escrow ever created.
 
-**TDD:** required — replay the same Fabric event twice, assert one release.
+- [x] **Durable checkpointing** — last processed block per stream, in MongoDB
+- [x] **Idempotent handlers** keyed on the Fabric transaction id / EVM tx hash
+- [x] **Retry with backoff and a dead-letter queue**
+- [x] **HA** — standalone worker (`npm run worker`) with a lease; several may run,
+      one processes
+- [x] **Polygon→Fabric audit interface** — `AuditSink`, wired to `audit-cc` in Block 8
+- [x] **Reconciliation job** comparing both chains
+- [~] **Bridge lag monitoring** — staleness yes, blocks-behind-head no (see below)
 
-**Commits:** ~8 small.
+**Why MongoDB.** It was already in the compose stack and in the BRD tech stack
+with nothing using it. This is its first consumer. Raw collections rather than
+mongoose models: bridge state is infrastructure, not one of the eight BRD data
+models (CLAUDE.md §9).
+
+**The ordering inside a delivery is the correctness argument**, not an
+implementation detail. Claim before any chain call, so a concurrent delivery is
+turned away before it can issue a second `release`. Checkpoint only after
+success — advancing past a failure is exactly how a failed delivery becomes a
+permanently lost one. But *do* checkpoint a deliberate skip: an approved invoice
+with no linked escrow is a legitimate no-op, and refusing to advance past it
+would pin the checkpoint and make every restart re-read from there.
+
+**Two retry layers, deliberately.** `withRetry()` absorbs one flaky RPC call
+inside a delivery; the durable inbox survives a chain that is down for longer,
+and a restart. Inbox entries carry the event payload, because the Fabric stream
+does not go backwards — a stored failure that cannot be re-executed from its own
+payload can only wait for a reconnect, which is not a retry policy so much as a
+hope.
+
+**Fails closed.** A bridge with no durable store is worse than no bridge, because
+it looks like it is working. An unreachable Mongo is now a startup failure;
+`BRIDGE_ALLOW_MEMORY_STORE` is the development opt-out and is refused in
+production.
+
+### Two defects the live run found that the tests did not
+
+**An already-settled escrow was treated as a failure.** The handler claimed its
+calls were safe to repeat. They are not — `markInvoiceApproved` reverts with
+`EscrowVault: bad status` once an escrow has settled. The first live run started
+with no checkpoint, replayed from block 0, redelivered five historical approvals
+whose escrows were long since released, and dead-lettered all five, each having
+burned its full retry budget on a call that could never succeed. *"The on-chain
+state is the judge"* was in a comment and nowhere in the code. The handler now
+reads the escrow first: settled is success, a condition already set is not
+re-marked, and only what is still releasable is released.
+
+**`last_progress_at` reported null.** It was a module-level variable, so it reset
+on every restart — including the restart you most want to know about, because a
+stuck bridge then looks exactly like one that has just come up. It now reads the
+checkpoint document's own `updated_at`.
+
+Both were invisible to the suite because the vault mocks returned fixed values,
+which let the tests encode assumptions about call order. They are now stateful
+and keyed per escrow: marking flips the condition and releasing settles it, as
+the contract does.
+
+### Operator surface
+
+`GET /api/bridge/status` · `GET /api/bridge/dead-letters` ·
+`POST /api/bridge/dead-letters/reopen` · `POST /api/bridge/reconcile`
+
+Platform-only: the dead-letter queue names escrow ids and failure reasons across
+every deal on the network, so a counterparty reading it would see traffic that is
+not theirs.
+
+**Reconciliation is the check the inbox cannot make.** Retries only cover
+deliveries that arrived and failed; an event the bridge never received — a missed
+subscription window, a dead letter nobody actioned — leaves the chains
+disagreeing with nothing in the inbox to show for it. It walks Polygon's escrow
+log as the index, because Fabric has no "list invoices" query to iterate from,
+and names three drifts: a Fabric approval never carried to Polygon, money still
+in the vault with every condition true, and a release Fabric never approved.
+
+**Lag is reported as staleness, not blocks-behind-head.** The bridge's own stream
+is what observes the head, so comparing its checkpoint to that measures nothing.
+The true height needs `qscc GetChainInfo`, whose response is protobuf and would
+need `fabric-protos` to decode — recorded as a gap rather than papered over with
+a number that would always be zero.
+
+**TDD:** followed — the spec was committed as a failing test first, driving a real
+in-memory store rather than mocks, because idempotency and retry are claims about
+sequences of calls.
+
+**`security-review`:** clean — no HIGH or MEDIUM findings. The candidates checked
+and cleared were NoSQL injection through `POST /dead-letters/reopen` (blocked by
+the `typeof key !== 'string'` guard, which is the only thing standing between a
+caller and `deleteOne({_id: {$ne: null}})`), authorization on all four endpoints
+(mounted after `authenticate`, `requireOrgType('Platform')` refuses Auditor on the
+GETs too — confirmed live with a buyer token), and whether reopening a dead letter
+can force a release Rule-0B should have stopped (it cannot: the handler re-reads
+the vault, and `invoiceApproved` can only have been set by a genuine Fabric
+approval).
+
+**Verification:** 28 onboarding-cc · 64 trade-doc-cc · 33 finance-cc · 144 API ·
+20 contracts. `npm run demo` green end to end. On the live stack after a full run:
+checkpoint 408, zero pending retries, zero dead letters, reconciliation in sync.
+
+**Still open:** the `qscc` chain-height read for true blocks-behind-head lag; and
+the Polygon→Fabric leg still ends at `PendingAuditSink` until `audit-cc` lands in
+Block 8.
 
 ---
 
